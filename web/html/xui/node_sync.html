@@ -43,6 +43,13 @@
         font-size: 12px;
         opacity: .6;
     }
+    .node-sync-error {
+        margin-top: 4px;
+        font-size: 12px;
+        line-height: 1.4;
+        color: #e5484d;
+        word-break: break-all;
+    }
 </style>
 <body>
 <a-layout id="app" v-cloak :class="themeSwitcher.currentTheme">
@@ -88,13 +95,23 @@
                 </a-card>
                 <a-card>
                     <a-table :columns="columns" :data-source="nodes" row-key="id"
-                             :pagination="false" :scroll="{x: 900}"
+                             :pagination="false" :scroll="{x: 980}"
                              :locale="{emptyText: '{{ i18n "pages.nodeSync.empty" }}'}">
                         <span slot="address" slot-scope="text">
                             <span class="node-sync-address">[[ text ]]</span>
                         </span>
                         <span slot="status" slot-scope="text, record">
-                            <a-tag :color="record.ready ? 'green' : 'orange'">
+                            <template v-if="nodeChecks[record.id]">
+                                <a-tag v-if="nodeChecks[record.id].loading" color="blue">[[ checkingText ]]</a-tag>
+                                <template v-else-if="nodeChecks[record.id].error">
+                                    <a-tag color="red">[[ errorLabels[nodeChecks[record.id].kind] || connErrorText ]]</a-tag>
+                                    <div class="node-sync-error" v-if="nodeChecks[record.id].kind !== 'auth'">[[ nodeChecks[record.id].error ]]</div>
+                                </template>
+                                <a-tag v-else :color="record.ready ? 'green' : 'orange'">
+                                    [[ record.ready ? readyText : pendingText ]]
+                                </a-tag>
+                            </template>
+                            <a-tag v-else :color="record.ready ? 'green' : 'orange'">
                                 [[ record.ready ? readyText : pendingText ]]
                             </a-tag>
                         </span>
@@ -119,6 +136,10 @@
                                     <a-menu-item key="merge">
                                         <a-icon type="merge-cells"></a-icon>
                                         {{ i18n "pages.nodeSync.mergeData" }}
+                                    </a-menu-item>
+                                    <a-menu-item key="check">
+                                        <a-icon type="sync"></a-icon>
+                                        {{ i18n "pages.nodeSync.checkNode" }}
                                     </a-menu-item>
                                     <a-menu-item key="edit">
                                         <a-icon type="edit"></a-icon>
@@ -151,8 +172,8 @@
             <a-input v-model="modal.form.username"></a-input>
         </a-form-item>
         <a-form-item :label="labels.password">
-            <a-input-password v-model="modal.form.password"
-                              :placeholder="modal.isEdit ? labels.passwordKeep : labels.password"></a-input-password>
+            <a-input v-model="modal.form.password"
+                              :placeholder="modal.isEdit ? labels.passwordKeep : labels.password"></a-input>
         </a-form-item>
     </a-form>
 </a-modal>
@@ -171,6 +192,15 @@
             role: '',
             masterName: '',
             nodes: [],
+            nodeChecks: {},
+            checkingText: '{{ i18n "pages.nodeSync.statusChecking" }}',
+            connErrorText: '{{ i18n "pages.nodeSync.statusError" }}',
+            errorLabels: {
+                address: '{{ i18n "pages.nodeSync.statusBadAddress" }}',
+                auth: '{{ i18n "pages.nodeSync.statusAuthError" }}',
+                panel: '{{ i18n "pages.nodeSync.statusPanelError" }}',
+                role: '{{ i18n "pages.nodeSync.statusRoleError" }}',
+            },
             autoInterval: 5,
             autoEnabled: false,
             savingAuto: false,
@@ -207,7 +237,7 @@
             columns: [
                 { title: '{{ i18n "pages.nodeSync.remark" }}', dataIndex: 'remark', width: 150, ellipsis: true },
                 { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 280, scopedSlots: { customRender: 'address' } },
-                { title: '{{ i18n "pages.nodeSync.status" }}', width: 110, scopedSlots: { customRender: 'status' } },
+                { title: '{{ i18n "pages.nodeSync.status" }}', width: 190, scopedSlots: { customRender: 'status' } },
                 { title: '{{ i18n "pages.nodeSync.lastSync" }}', dataIndex: 'lastSync', width: 170, scopedSlots: { customRender: 'lastSync' } },
                 { title: '{{ i18n "pages.nodeSync.operate" }}', width: 110, scopedSlots: { customRender: 'actions' } },
             ],
@@ -242,9 +272,35 @@
                         this.nodes = msg.obj.nodes || [];
                         this.autoEnabled = (msg.obj.autoInterval || 0) > 0;
                         this.autoInterval = this.autoEnabled ? msg.obj.autoInterval : 5;
+                        this.refreshChecks();
                     }
                 } finally {
                     this.spinning = false;
+                }
+            },
+            refreshChecks() {
+                const ids = this.nodes.map(node => node.id);
+                Object.keys(this.nodeChecks).forEach(key => {
+                    if (ids.indexOf(Number(key)) === -1) {
+                        this.$delete(this.nodeChecks, Number(key));
+                    }
+                });
+                ids.forEach(id => this.checkNode(id));
+            },
+            async checkNode(id) {
+                this.$set(this.nodeChecks, id, {loading: true, error: ''});
+                const msg = await HttpUtil.post(`/xui/node_sync/check/${id}`, {});
+                if (msg.success && msg.obj) {
+                    this.$set(this.nodeChecks, id, {
+                        loading: false,
+                        online: !!msg.obj.online,
+                        kind: msg.obj.kind || '',
+                        error: msg.obj.error || '',
+                        version: msg.obj.version || '',
+                        role: msg.obj.role || '',
+                    });
+                } else {
+                    this.$set(this.nodeChecks, id, {loading: false, online: false, error: msg.msg || ''});
                 }
             },
             async saveAuto() {
@@ -340,6 +396,9 @@
                     case 'merge':
                         this.confirmMerge(record);
                         break;
+                    case 'check':
+                        this.checkNode(record.id);
+                        break;
                     case 'edit':
                         this.openEdit(record);
                         break;
@@ -359,10 +418,8 @@
                 });
             },
             async runInit(id) {
-                const msg = await HttpUtil.post(`/xui/node_sync/init/${id}`, {});
-                if (msg.success) {
-                    await this.getNodes();
-                }
+                await HttpUtil.post(`/xui/node_sync/init/${id}`, {});
+                await this.getNodes();
             },
             confirmPush(record) {
                 this.$confirm({
@@ -372,10 +429,8 @@
                     cancelText: '{{ i18n "cancel" }}',
                     class: themeSwitcher.currentTheme,
                     onOk: async () => {
-                        const msg = await HttpUtil.post(`/xui/node_sync/push/${record.id}`, {});
-                        if (msg.success) {
-                            await this.getNodes();
-                        }
+                        await HttpUtil.post(`/xui/node_sync/push/${record.id}`, {});
+                        await this.getNodes();
                     },
                 });
             },
@@ -396,8 +451,8 @@
                                 .replace('{rules}', r.rules || 0)
                                 .replace('{skipped}', r.skipped || 0);
                             this.$message.info(summary);
-                            await this.getNodes();
                         }
+                        await this.getNodes();
                     },
                 });
             },

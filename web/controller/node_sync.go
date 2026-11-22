@@ -36,6 +36,7 @@ func (a *NodeSyncController) initRouter(g *gin.RouterGroup) {
 	g.GET("/nodes", a.nodes)
 	g.POST("/add", a.addNode)
 	g.POST("/update/:id", a.updateNode)
+	g.POST("/check/:id", a.checkNode)
 	g.POST("/delete/:id", a.deleteNode)
 	g.POST("/init/:id", a.initNode)
 	g.POST("/push/:id", a.pushNode)
@@ -100,6 +101,16 @@ func (a *NodeSyncController) updateNode(c *gin.Context) {
 	}
 	node, err := a.syncService.UpdateNode(id, form.Remark, form.Address, form.Username, form.Password)
 	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.updated"), node, err)
+}
+
+func (a *NodeSyncController) checkNode(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	check, err := a.syncService.CheckNode(id)
+	jsonObj(c, check, err)
 }
 
 func (a *NodeSyncController) deleteNode(c *gin.Context) {

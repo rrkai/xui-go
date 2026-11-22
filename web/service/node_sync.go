@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -34,6 +35,11 @@ import (
 const (
 	SyncRoleSlave = "slave"
 	SyncAppID     = "xui-go"
+
+	SyncCheckAddress = "address"
+	SyncCheckAuth    = "auth"
+	SyncCheckPanel   = "panel"
+	SyncCheckRole    = "role"
 
 	syncRequestTimeout = 30 * time.Second
 	syncInitTimeout    = 180 * time.Second
@@ -75,6 +81,14 @@ type SyncNodeView struct {
 	Ready     bool   `json:"ready"`
 	LastSync  int64  `json:"lastSync"`
 	CreatedAt int64  `json:"createdAt"`
+}
+
+type SyncNodeCheck struct {
+	Online  bool   `json:"online"`
+	Version string `json:"version"`
+	Role    string `json:"role"`
+	Kind    string `json:"kind"`
+	Error   string `json:"error"`
 }
 
 type SyncDataSet struct {
@@ -156,6 +170,51 @@ func (s *NodeSyncService) ListNodes() ([]*SyncNodeView, error) {
 		})
 	}
 	return views, nil
+}
+
+func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
+	node, err := s.loadNode(id)
+	if err != nil {
+		return nil, err
+	}
+	result := &SyncNodeCheck{}
+	password, err := decryptSyncPassword(node.Password)
+	if err != nil {
+		result.Kind = SyncCheckAuth
+		result.Error = "节点密码解密失败，请重新编辑节点信息"
+		return result, nil
+	}
+	client, err := newPanelClient(node.Address, 10*time.Second)
+	if err != nil {
+		result.Kind = SyncCheckAddress
+		result.Error = err.Error()
+		return result, nil
+	}
+	if err := client.login(node.Username, password); err != nil {
+		var authErr *syncPanelAuthError
+		if errors.As(err, &authErr) {
+			result.Kind = SyncCheckAuth
+		} else {
+			result.Kind = SyncCheckAddress
+		}
+		result.Error = err.Error()
+		return result, nil
+	}
+	info, err := client.info()
+	if err != nil {
+		result.Kind = SyncCheckPanel
+		result.Error = err.Error()
+		return result, nil
+	}
+	result.Online = true
+	result.Version = info.Version
+	result.Role = info.Role
+	if node.Ready && info.Role != SyncRoleSlave {
+		result.Online = false
+		result.Kind = SyncCheckRole
+		result.Error = "目标面板已不是副面板，请重新执行同步初始化"
+	}
+	return result, nil
 }
 
 func (s *NodeSyncService) AddNode(remark, address, username, password string) (*model.SyncNode, error) {
@@ -1097,6 +1156,14 @@ type remoteEnvelope struct {
 	Obj     json.RawMessage `json:"obj"`
 }
 
+type syncPanelAuthError struct {
+	msg string
+}
+
+func (e *syncPanelAuthError) Error() string {
+	return "登录失败: " + e.msg
+}
+
 type panelClient struct {
 	base   string
 	client *http.Client
@@ -1163,7 +1230,7 @@ func (p *panelClient) login(username, password string) error {
 		return err
 	}
 	if !envelope.Success {
-		return common.NewError("登录失败: " + envelope.Msg)
+		return &syncPanelAuthError{msg: envelope.Msg}
 	}
 	return nil
 }
