@@ -49,6 +49,7 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.GET("/remainingTraffic", a.remainingTraffic)
 	g.GET("/dashboard", a.dashboard)
 	g.GET("/checkUpdate", a.checkUpdate)
+	g.POST("/panelUpdate", a.panelUpdate)
 	g.GET("/certStatus", a.certStatus)
 	g.GET("/certPortCheck", a.certPortCheck)
 	g.POST("/certIssue", a.certIssue)
@@ -158,6 +159,11 @@ func (a *ServerController) dashboard(c *gin.Context) {
 func (a *ServerController) checkUpdate(c *gin.Context) {
 	info, err := a.serverService.CheckUpdate()
 	jsonObj(c, info, err)
+}
+
+func (a *ServerController) panelUpdate(c *gin.Context) {
+	err := a.serverService.StartPanelUpdate()
+	jsonMsg(c, I18nWeb(c, "pages.index.updateTitle"), err)
 }
 
 func (a *ServerController) setPanelTitle(c *gin.Context) {

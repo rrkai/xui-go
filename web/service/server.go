@@ -90,7 +90,7 @@ type Status struct {
 		Mem     uint64 `json:"mem"`
 		Uptime  uint64 `json:"uptime"`
 	} `json:"appStats"`
-	Temps []TempSensor `json:"temps"`
+	Temps    []TempSensor `json:"temps"`
 	HostInfo struct {
 		HostName string `json:"hostname"`
 		Ipv4     string `json:"ipv4"`
@@ -919,10 +919,12 @@ func (s *ServerService) GetDashboardWidgets(limit int) (*DashboardWidgets, error
 }
 
 type UpdateCheckInfo struct {
-	Current   string `json:"current"`
-	Latest    string `json:"latest"`
-	HasUpdate bool   `json:"hasUpdate"`
-	URL       string `json:"url"`
+	Current     string `json:"current"`
+	Latest      string `json:"latest"`
+	HasUpdate   bool   `json:"hasUpdate"`
+	URL         string `json:"url"`
+	Notes       string `json:"notes"`
+	PublishedAt string `json:"publishedAt"`
 }
 
 var (
@@ -965,8 +967,10 @@ func fetchLatestRelease(current string) (*UpdateCheckInfo, error) {
 		return nil, common.NewErrorf("release check: HTTP %d", resp.StatusCode)
 	}
 	var release struct {
-		TagName string `json:"tag_name"`
-		HTMLURL string `json:"html_url"`
+		TagName     string `json:"tag_name"`
+		HTMLURL     string `json:"html_url"`
+		Body        string `json:"body"`
+		PublishedAt string `json:"published_at"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return nil, err
@@ -975,7 +979,17 @@ func fetchLatestRelease(current string) (*UpdateCheckInfo, error) {
 	if latest == "" {
 		return nil, common.NewError("release check: empty tag")
 	}
-	info := &UpdateCheckInfo{Current: current, Latest: latest, URL: release.HTMLURL}
+	notes := strings.TrimSpace(strings.ReplaceAll(release.Body, "\r\n", "\n"))
+	if len(notes) > 20000 {
+		notes = notes[:20000]
+	}
+	info := &UpdateCheckInfo{
+		Current:     current,
+		Latest:      latest,
+		URL:         release.HTMLURL,
+		Notes:       notes,
+		PublishedAt: release.PublishedAt,
+	}
 	cur, lat := versionCode(current), versionCode(latest)
 	if cur > 0 && lat > 0 {
 		info.HasUpdate = lat > cur
@@ -1000,6 +1014,104 @@ func (s *ServerService) CheckUpdate() (*UpdateCheckInfo, error) {
 	updateCheckAt = time.Now()
 	updateCheckInfo, updateCheckError = fetchLatestRelease(config.GetVersion())
 	return updateCheckInfo, updateCheckError
+}
+
+var panelUpdateMu sync.Mutex
+var panelUpdateRunning bool
+
+func downloadInstallScript() ([]byte, error) {
+	client := &http.Client{Timeout: 20 * time.Second}
+	sources := []struct {
+		url    string
+		accept string
+	}{
+		{"https://raw.githubusercontent.com/rrkai/xui-go/main/install.sh", ""},
+		{"https://api.github.com/repos/rrkai/xui-go/contents/install.sh?ref=main", "application/vnd.github.raw"},
+	}
+	var lastErr error
+	for _, source := range sources {
+		req, err := http.NewRequest(http.MethodGet, source.url, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if source.accept != "" {
+			req.Header.Set("Accept", source.accept)
+		}
+		req.Header.Set("User-Agent", "xui-go-panel")
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			lastErr = common.NewErrorf("install script: HTTP %d", resp.StatusCode)
+			continue
+		}
+		if !strings.HasPrefix(string(body), "#!/bin/bash") {
+			lastErr = common.NewError("install script: unexpected content")
+			continue
+		}
+		return body, nil
+	}
+	if lastErr == nil {
+		lastErr = common.NewError("install script: no source available")
+	}
+	return nil, lastErr
+}
+
+// StartPanelUpdate downloads install.sh and runs it in a transient systemd
+// unit. The unit lives outside the x-ui service cgroup, so the updater
+// survives the service restart and the panel comes back on the new release.
+func (s *ServerService) StartPanelUpdate() error {
+	panelUpdateMu.Lock()
+	defer panelUpdateMu.Unlock()
+	if panelUpdateRunning {
+		return common.NewError("panel update is already running")
+	}
+	if runtime.GOOS != "linux" {
+		return common.NewError("panel update is only supported on Linux")
+	}
+	if exe, err := os.Executable(); err != nil || filepath.Clean(exe) != "/usr/local/x-ui/x-ui" {
+		return common.NewError("panel update is only available for the standard /usr/local/x-ui installation")
+	}
+	if _, err := exec.LookPath("systemd-run"); err != nil {
+		return common.NewError("panel update requires systemd; run 'x-ui update' over SSH instead")
+	}
+	if err := exec.Command("systemctl", "is-active", "--quiet", "x-ui").Run(); err != nil {
+		return common.NewError("panel update requires the x-ui systemd service to be running")
+	}
+	script, err := downloadInstallScript()
+	if err != nil {
+		return err
+	}
+	scriptPath := fmt.Sprintf("/tmp/xui-panel-update-%d.sh", time.Now().Unix())
+	if err := os.WriteFile(scriptPath, script, 0700); err != nil {
+		return err
+	}
+	unit := fmt.Sprintf("xui-panel-update-%d", time.Now().Unix())
+	command := fmt.Sprintf("umask 077; rm -f /var/log/x-ui-update.log; bash %s </dev/null >/var/log/x-ui-update.log 2>&1; rm -f %s", scriptPath, scriptPath)
+	out, err := exec.Command("systemd-run", "--unit="+unit, "--collect", "--no-block",
+		"/bin/bash", "-lc", command).CombinedOutput()
+	if err != nil {
+		os.Remove(scriptPath)
+		return common.NewErrorf("failed to start updater: %v %s", err, strings.TrimSpace(string(out)))
+	}
+	panelUpdateRunning = true
+	go func() {
+		time.Sleep(15 * time.Minute)
+		panelUpdateMu.Lock()
+		panelUpdateRunning = false
+		panelUpdateMu.Unlock()
+	}()
+	logger.Info("panel update started: ", unit)
+	return nil
 }
 
 type RemainingTrafficItem struct {

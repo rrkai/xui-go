@@ -197,10 +197,11 @@
                 <a-col :xs="24" :sm="12" :md="6">
                     <a-card hoverable>
                         <strong>{{ i18n "pages.inbounds.stream.tcp.version" }}:</strong>
-                        <a href="https://github.com/rrkai/xui-go/releases" target="_blank">
-                            <a-tag color="purple" style="cursor: pointer;">XUI-GO v{{ .cur_ver }}</a-tag>
-                        </a>
-                        <a v-if="updateCheck.hasUpdate" :href="updateCheck.url" target="_blank" class="cb-update-hint">({{ i18n "pages.index.updateAvailable" }})</a>
+                        <span class="cb-version-pill">
+                            <a href="https://github.com/rrkai/xui-go/releases" target="_blank">
+                                <a-tag color="purple" style="cursor: pointer; margin-right: 0;">XUI-GO v{{ .cur_ver }}</a-tag>
+                            </a><a v-if="updateCheck.hasUpdate" class="cb-update-hint" @click="openUpdateModal">({{ i18n "pages.index.updateAvailable" }})</a>
+                        </span>
                         <a-tooltip title='{{ i18n "pages.index.xraySwitch" }}'>
                             <a-tag color="purple" style="cursor: pointer;" @click="openSelectV2rayVersion">Xray [[ status.xray.version ]]</a-tag>
                         </a-tooltip>
@@ -391,6 +392,29 @@
              :ok-text="hostTitleModal.okText" cancel-text='{{ i18n "cancel" }}'
              :confirm-loading="hostTitleModal.saving" @ok="saveHostTitle">
         <a-input v-model="hostTitleModal.value" maxLength="64" placeholder='{{ i18n "pages.index.hostnameHint" }}'></a-input>
+    </a-modal>
+
+    <a-modal id="update-modal" v-model="updateCheck.modalVisible"
+             :title="'{{ i18n "pages.index.updateTitle" }} ' + updateCheck.latest"
+             :closable="!updateCheck.updating" :mask-closable="false"
+             :class="themeSwitcher.currentTheme" width="640px" footer="">
+        <template v-if="!updateCheck.updating">
+            <a-alert type="info" show-icon style="margin-bottom: 12px"
+                     :message="'{{ i18n "pages.index.updateLatest" }}: ' + updateCheck.latest + (updateCheck.publishedAt ? '  ·  ' + updateCheck.publishedAt.slice(0, 10) : '')"></a-alert>
+            <div class="cb-update-notes" v-if="updateCheck.notes">[[ updateCheck.notes ]]</div>
+            <div class="cb-update-notes" v-else>{{ i18n "pages.index.updateNoNotes" }}</div>
+            <p style="margin: 12px 0 0;">{{ i18n "pages.index.updateConfirmDesc" }}</p>
+            <a-alert v-if="updateCheck.error" type="error" show-icon style="margin-top: 12px" :message="updateCheck.error"></a-alert>
+            <div style="text-align: right; margin-top: 16px;">
+                <a-button style="margin-right: 8px;" @click="updateCheck.modalVisible = false">{{ i18n "cancel" }}</a-button>
+                <a-button type="primary" :loading="updateCheck.starting" @click="startPanelUpdate">{{ i18n "confirm" }}</a-button>
+            </div>
+        </template>
+        <div v-else style="text-align: center; padding: 28px 0;">
+            <a-spin size="large" />
+            <div style="margin-top: 16px;">{{ i18n "pages.index.updating" }}</div>
+            <a-alert v-if="updateCheck.error" type="error" show-icon style="margin-top: 16px; text-align: left;" :message="updateCheck.error"></a-alert>
+        </div>
     </a-modal>
 
 </a-layout>
@@ -596,7 +620,7 @@
             rank: {today: [], yesterday: [], beforeYesterday: []},
             expiryItems: [],
             remainingItems: [],
-            updateCheck: {hasUpdate: false, url: ''},
+            updateCheck: {hasUpdate: false, url: '', latest: '', notes: '', publishedAt: '', modalVisible: false, starting: false, updating: false, error: ''},
             i18nOnline: '{{ i18n "pages.index.online" }}',
             i18nOffline: '{{ i18n "pages.index.offline" }}',
             i18nError: '{{ i18n "pages.index.error" }}',
@@ -740,11 +764,61 @@
                 try {
                     const msg = await HttpUtil.get('/server/checkUpdate');
                     if (msg.success && msg.obj && msg.obj.hasUpdate) {
-                        this.updateCheck = {hasUpdate: true, url: msg.obj.url || ''};
+                        this.updateCheck.hasUpdate = true;
+                        this.updateCheck.url = msg.obj.url || '';
+                        this.updateCheck.latest = msg.obj.latest || '';
+                        this.updateCheck.notes = msg.obj.notes || '';
+                        this.updateCheck.publishedAt = msg.obj.publishedAt || '';
                     }
                 } catch (e) {
                     // version check is best-effort; stay silent on failure
                 }
+            },
+            openUpdateModal() {
+                if (!this.updateCheck.hasUpdate) return;
+                this.updateCheck.error = '';
+                this.updateCheck.modalVisible = true;
+            },
+            async startPanelUpdate() {
+                if (this.updateCheck.starting || this.updateCheck.updating) return;
+                this.updateCheck.starting = true;
+                this.updateCheck.error = '';
+                try {
+                    const msg = await HttpUtil.post('/server/panelUpdate', {});
+                    if (!msg.success) {
+                        this.updateCheck.error = msg.msg || '';
+                        return;
+                    }
+                    this.updateCheck.updating = true;
+                    this.watchPanelRestart();
+                } catch (e) {
+                    this.updateCheck.error = String(e);
+                } finally {
+                    this.updateCheck.starting = false;
+                }
+            },
+            watchPanelRestart() {
+                const deadline = Date.now() + 10 * 60 * 1000;
+                let sawDown = false;
+                const probe = async () => {
+                    if (Date.now() > deadline) {
+                        this.updateCheck.updating = false;
+                        this.updateCheck.error = '{{ i18n "pages.index.updateTimeout" }}';
+                        return;
+                    }
+                    try {
+                        const resp = await fetch(window.location.href, {cache: 'no-store'});
+                        if (!resp.ok) throw new Error('down');
+                        if (sawDown) {
+                            window.location.reload();
+                            return;
+                        }
+                    } catch (e) {
+                        sawDown = true;
+                    }
+                    setTimeout(probe, 2000);
+                };
+                setTimeout(probe, 2000);
             },
             remainingChipClass(item) {
                 if (item.remaining <= 0) {

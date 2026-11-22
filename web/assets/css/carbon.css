@@ -429,11 +429,31 @@
     width: 100%;
 }
 
+.cb-version-pill {
+    display: inline-block;
+    margin-right: 8px;
+}
+
 .cb-update-hint {
-    margin-left: 4px;
+    margin-left: 2px;
+    cursor: pointer;
     font-size: 12px;
     font-weight: 600;
     color: var(--cb-purple);
+}
+
+.cb-update-notes {
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--cb-fill);
+    border: 1px solid var(--cb-sep);
+    color: var(--cb-text);
 }
 
 /* daily traffic ranking */
