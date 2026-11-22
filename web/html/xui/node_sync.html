@@ -43,14 +43,7 @@
         font-size: 12px;
         opacity: .6;
     }
-    .node-sync-error {
-        margin-top: 4px;
-        font-size: 12px;
-        line-height: 1.4;
-        color: #e5484d;
-        word-break: break-all;
-    }
-</style>
+    </style>
 <body>
 <a-layout id="app" v-cloak :class="themeSwitcher.currentTheme">
     {{ template "commonSider" . }}
@@ -103,10 +96,9 @@
                         <span slot="status" slot-scope="text, record">
                             <template v-if="nodeChecks[record.id]">
                                 <a-tag v-if="nodeChecks[record.id].loading" color="blue">[[ checkingText ]]</a-tag>
-                                <template v-else-if="nodeChecks[record.id].error">
-                                    <a-tag color="red">[[ errorLabels[nodeChecks[record.id].kind] || connErrorText ]]</a-tag>
-                                    <div class="node-sync-error" v-if="nodeChecks[record.id].kind !== 'auth'">[[ nodeChecks[record.id].error ]]</div>
-                                </template>
+                                <a-tag v-else-if="nodeChecks[record.id].error" color="red" :title="nodeChecks[record.id].error">
+                                    [[ errorLabels[nodeChecks[record.id].kind] || errorLabels.address ]]
+                                </a-tag>
                                 <a-tag v-else :color="record.ready ? 'green' : 'orange'">
                                     [[ record.ready ? readyText : pendingText ]]
                                 </a-tag>
@@ -134,7 +126,7 @@
                                         {{ i18n "pages.nodeSync.pushSync" }}
                                     </a-menu-item>
                                     <a-menu-item key="merge">
-                                        <a-icon type="merge-cells"></a-icon>
+                                        <a-icon type="swap"></a-icon>
                                         {{ i18n "pages.nodeSync.mergeData" }}
                                     </a-menu-item>
                                     <a-menu-item key="check">
@@ -194,12 +186,10 @@
             nodes: [],
             nodeChecks: {},
             checkingText: '{{ i18n "pages.nodeSync.statusChecking" }}',
-            connErrorText: '{{ i18n "pages.nodeSync.statusError" }}',
             errorLabels: {
                 address: '{{ i18n "pages.nodeSync.statusBadAddress" }}',
                 auth: '{{ i18n "pages.nodeSync.statusAuthError" }}',
-                panel: '{{ i18n "pages.nodeSync.statusPanelError" }}',
-                role: '{{ i18n "pages.nodeSync.statusRoleError" }}',
+                timeout: '{{ i18n "pages.nodeSync.statusTimeout" }}',
             },
             autoInterval: 5,
             autoEnabled: false,
@@ -247,6 +237,7 @@
                 isEdit: false,
                 id: 0,
                 title: '{{ i18n "pages.nodeSync.addTitle" }}',
+                originalPassword: '',
                 form: { remark: '', address: '', username: '', password: '' },
             },
         },
@@ -336,6 +327,7 @@
                 this.modal.isEdit = false;
                 this.modal.id = 0;
                 this.modal.title = '{{ i18n "pages.nodeSync.addTitle" }}';
+                this.modal.originalPassword = '';
                 this.modal.form = { remark: '', address: '', username: '', password: '' };
                 this.modal.visible = true;
             },
@@ -343,6 +335,7 @@
                 this.modal.isEdit = true;
                 this.modal.id = record.id;
                 this.modal.title = '{{ i18n "pages.nodeSync.editTitle" }}';
+                this.modal.originalPassword = '';
                 this.modal.form = {
                     remark: record.remark || '',
                     address: record.address || '',
@@ -350,6 +343,15 @@
                     password: '',
                 };
                 this.modal.visible = true;
+                this.loadNodePassword(record.id);
+            },
+            async loadNodePassword(id) {
+                const msg = await HttpUtil.get(`/xui/node_sync/password/${id}`);
+                if (msg.success && msg.obj && this.modal.visible && this.modal.isEdit &&
+                    this.modal.id === id && !this.modal.form.password) {
+                    this.modal.form.password = msg.obj.password || '';
+                    this.modal.originalPassword = this.modal.form.password;
+                }
             },
             async saveNode() {
                 const form = this.modal.form;
@@ -361,7 +363,11 @@
                 try {
                     let msg;
                     if (this.modal.isEdit) {
-                        msg = await HttpUtil.post(`/xui/node_sync/update/${this.modal.id}`, form);
+                        const payload = Object.assign({}, form);
+                        if (payload.password === this.modal.originalPassword) {
+                            payload.password = '';
+                        }
+                        msg = await HttpUtil.post(`/xui/node_sync/update/${this.modal.id}`, payload);
                         if (msg.success) {
                             this.modal.visible = false;
                             await this.getNodes();

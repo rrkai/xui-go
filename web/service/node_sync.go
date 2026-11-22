@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -38,8 +39,7 @@ const (
 
 	SyncCheckAddress = "address"
 	SyncCheckAuth    = "auth"
-	SyncCheckPanel   = "panel"
-	SyncCheckRole    = "role"
+	SyncCheckTimeout = "timeout"
 
 	syncRequestTimeout = 30 * time.Second
 	syncInitTimeout    = 180 * time.Second
@@ -192,9 +192,12 @@ func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
 	}
 	if err := client.login(node.Username, password); err != nil {
 		var authErr *syncPanelAuthError
-		if errors.As(err, &authErr) {
+		switch {
+		case errors.As(err, &authErr):
 			result.Kind = SyncCheckAuth
-		} else {
+		case isSyncTimeout(err):
+			result.Kind = SyncCheckTimeout
+		default:
 			result.Kind = SyncCheckAddress
 		}
 		result.Error = err.Error()
@@ -202,7 +205,11 @@ func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
 	}
 	info, err := client.info()
 	if err != nil {
-		result.Kind = SyncCheckPanel
+		if isSyncTimeout(err) {
+			result.Kind = SyncCheckTimeout
+		} else {
+			result.Kind = SyncCheckAddress
+		}
 		result.Error = err.Error()
 		return result, nil
 	}
@@ -211,7 +218,7 @@ func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
 	result.Role = info.Role
 	if node.Ready && info.Role != SyncRoleSlave {
 		result.Online = false
-		result.Kind = SyncCheckRole
+		result.Kind = SyncCheckAddress
 		result.Error = "目标面板已不是副面板，请重新执行同步初始化"
 	}
 	return result, nil
@@ -299,7 +306,7 @@ func (s *NodeSyncService) UpdateNode(id int, remark, address, username, password
 			}
 			node.Password = encrypted
 		}
-		if addressChanged {
+		if info.Role != SyncRoleSlave {
 			node.Ready = false
 			node.LastSync = 0
 		}
@@ -309,6 +316,27 @@ func (s *NodeSyncService) UpdateNode(id int, remark, address, username, password
 		return nil, err
 	}
 	return node, nil
+}
+
+func isSyncTimeout(err error) bool {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded")
+}
+
+func (s *NodeSyncService) GetNodePassword(id int) (string, error) {
+	node, err := s.loadNode(id)
+	if err != nil {
+		return "", err
+	}
+	password, err := decryptSyncPassword(node.Password)
+	if err != nil {
+		return "", common.NewError("节点密码解密失败，请重新填写密码")
+	}
+	return password, nil
 }
 
 func (s *NodeSyncService) DeleteNode(id int) (string, error) {
