@@ -176,6 +176,33 @@
                                             </a-menu-item>
                                         </a-menu>
                                     </a-dropdown>
+                                    <a-dropdown :trigger="['click']">
+                                        <a-button type="primary" icon="thunderbolt">
+                                            <template v-if="!isMobile">{{ i18n "pages.inbounds.quickAdd" }}</template>
+                                        </a-button>
+                                        <a-menu slot="overlay" @click="a => quickActions(a)" :theme="themeSwitcher.currentTheme">
+                                            <a-menu-item key="quickVless">
+                                                <a-icon type="plus-circle"></a-icon>
+                                                {{ i18n "pages.inbounds.quickAddVless" }}
+                                            </a-menu-item>
+                                            <a-menu-item key="quickSS2022">
+                                                <a-icon type="lock"></a-icon>
+                                                {{ i18n "pages.inbounds.quickAddSS2022" }}
+                                            </a-menu-item>
+                                            <a-menu-item key="quickVmess">
+                                                <a-icon type="cloud"></a-icon>
+                                                {{ i18n "pages.inbounds.quickAddVmess" }}
+                                            </a-menu-item>
+                                            <a-menu-item key="quickSocks5">
+                                                <a-icon type="global"></a-icon>
+                                                {{ i18n "pages.inbounds.quickAddSocks5" }}
+                                            </a-menu-item>
+                                            <a-menu-item key="quickPortForward">
+                                                <a-icon type="swap"></a-icon>
+                                                {{ i18n "pages.inbounds.quickPortForward" }}
+                                            </a-menu-item>
+                                        </a-menu>
+                                    </a-dropdown>
                                 </a-col>
                                 <a-col :xs="12" :sm="12" :lg="12" style="text-align: right;">
                                     <a-select v-model="refreshInterval"
@@ -467,6 +494,29 @@
                 </transition>
             </a-spin>
         </a-layout-content>
+        <a-modal
+            v-model="quickForward.visible"
+            title='{{ i18n "pages.inbounds.quickPortForward" }}'
+            :confirm-loading="quickForward.submitting"
+            :mask-closable="false"
+            ok-text='{{ i18n "confirm" }}'
+            cancel-text='{{ i18n "close" }}'
+            :class="themeSwitcher.currentTheme"
+            @ok="submitQuickPortForward">
+            <a-form :colon="false" :label-col="{ md: {span: 8} }" :wrapper-col="{ md: {span: 14} }">
+                <a-form-item label='{{ i18n "pages.inbounds.localPort" }}'>
+                    <a-input-number v-model="quickForward.localPort" :min="1" :max="65535"
+                        style="width: 100%"></a-input-number>
+                </a-form-item>
+                <a-form-item label='{{ i18n "pages.inbounds.targetAddress" }}'>
+                    <a-input v-model.trim="quickForward.targetAddress" placeholder="1.2.3.4 / example.com"></a-input>
+                </a-form-item>
+                <a-form-item label='{{ i18n "pages.inbounds.destinationPort" }}'>
+                    <a-input-number v-model="quickForward.targetPort" :min="1" :max="65535"
+                        style="width: 100%"></a-input-number>
+                </a-form-item>
+            </a-form>
+        </a-modal>
     </a-layout>
 </a-layout>
 {{template "js" .}}
@@ -647,6 +697,13 @@
             tgBotEnable: false,
             showAlert: false,
             pageSize: 0,
+            quickForward: {
+                visible: false,
+                submitting: false,
+                localPort: null,
+                targetAddress: '',
+                targetPort: null,
+            },
             isMobile: window.innerWidth <= 768,
             iplimitSupported: '{{ .iplimitSupported }}' === 'true',
         },
@@ -840,6 +897,117 @@
                     case "delDepletedClients":
                         this.delDepletedClients(-1)
                         break;
+                }
+            },
+            quickActions(action) {
+                switch (action.key) {
+                    case "quickVless":
+                        this.confirmQuickVless();
+                        break;
+                    case "quickSS2022":
+                        this.confirmQuickSS2022();
+                        break;
+                    case "quickVmess":
+                        this.confirmQuickVmess();
+                        break;
+                    case "quickSocks5":
+                        this.confirmQuickSocks5();
+                        break;
+                    case "quickPortForward":
+                        this.openQuickPortForward();
+                        break;
+                }
+            },
+            confirmQuickVless() {
+                this.$confirm({
+                    title: '{{ i18n "pages.inbounds.quickAdd" }}',
+                    content: '{{ i18n "pages.inbounds.quickVlessConfirm" }}',
+                    okText: '{{ i18n "confirm" }}',
+                    cancelText: '{{ i18n "close" }}',
+                    class: themeSwitcher.currentTheme,
+                    onOk: () => this.quickAddVless(),
+                });
+            },
+            async quickAddVless() {
+                const msg = await HttpUtil.post('/xui/inbound/quickVless');
+                if (msg.success) {
+                    await this.getDBInbounds();
+                }
+            },
+            confirmQuickVmess() {
+                this.$confirm({
+                    title: '{{ i18n "pages.inbounds.quickAdd" }}',
+                    content: '{{ i18n "pages.inbounds.quickVmessConfirm" }}',
+                    okText: '{{ i18n "confirm" }}',
+                    cancelText: '{{ i18n "close" }}',
+                    class: themeSwitcher.currentTheme,
+                    onOk: () => this.quickAddVmess(),
+                });
+            },
+            async quickAddVmess() {
+                const msg = await HttpUtil.post('/xui/inbound/quickVmess');
+                if (msg.success) {
+                    await this.getDBInbounds();
+                }
+            },
+            confirmQuickSS2022() {
+                this.$confirm({
+                    title: '{{ i18n "pages.inbounds.quickAdd" }}',
+                    content: '{{ i18n "pages.inbounds.quickSS2022Confirm" }}',
+                    okText: '{{ i18n "confirm" }}',
+                    cancelText: '{{ i18n "close" }}',
+                    class: themeSwitcher.currentTheme,
+                    onOk: () => this.quickAddSS2022(),
+                });
+            },
+            async quickAddSS2022() {
+                const msg = await HttpUtil.post('/xui/inbound/quickSS2022');
+                if (msg.success) {
+                    await this.getDBInbounds();
+                }
+            },
+            confirmQuickSocks5() {
+                this.$confirm({
+                    title: '{{ i18n "pages.inbounds.quickAdd" }}',
+                    content: '{{ i18n "pages.inbounds.quickSocks5Confirm" }}',
+                    okText: '{{ i18n "confirm" }}',
+                    cancelText: '{{ i18n "close" }}',
+                    class: themeSwitcher.currentTheme,
+                    onOk: () => this.quickAddSocks5(),
+                });
+            },
+            async quickAddSocks5() {
+                const msg = await HttpUtil.post('/xui/inbound/quickSocks5');
+                if (msg.success) {
+                    await this.getDBInbounds();
+                }
+            },
+            async openQuickPortForward() {
+                this.quickForward.localPort = null;
+                this.quickForward.targetAddress = '';
+                this.quickForward.targetPort = null;
+                const msg = await HttpUtil.post('/xui/inbound/freePort');
+                if (msg.success && typeof msg.obj === 'number') {
+                    this.quickForward.localPort = msg.obj;
+                }
+                this.quickForward.visible = true;
+            },
+            async submitQuickPortForward() {
+                const form = this.quickForward;
+                if (!form.localPort || !form.targetAddress || !form.targetPort) {
+                    this.$message.error('{{ i18n "pages.inbounds.quickForwardRequired" }}');
+                    return;
+                }
+                form.submitting = true;
+                const msg = await HttpUtil.post('/xui/inbound/quickPortForward', {
+                    localPort: form.localPort,
+                    targetAddress: form.targetAddress,
+                    targetPort: form.targetPort,
+                });
+                form.submitting = false;
+                if (msg.success) {
+                    form.visible = false;
+                    await this.getDBInbounds();
                 }
             },
             clickAction(action, dbInbound) {

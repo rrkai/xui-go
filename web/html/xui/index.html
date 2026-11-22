@@ -380,6 +380,9 @@
             <a-button type="primary" @click="importDatabase()">
                 [[ backupModal.importText ]]
             </a-button>
+            <a-button type="primary" @click="openAutoBackupSettings()">
+                [[ backupModal.autoBackupText ]]
+            </a-button>
         </a-space>
     </a-modal>
 
@@ -544,16 +547,19 @@
         description: '',
         exportText: '',
         importText: '',
+        autoBackupText: '',
         show({
             title = '{{ i18n "pages.index.backupTitle" }}',
             description = '{{ i18n "pages.index.backupDescription" }}',
             exportText = '{{ i18n "pages.index.exportDatabase" }}',
             importText = '{{ i18n "pages.index.importDatabase" }}',
+            autoBackupText = '{{ i18n "pages.index.autoBackupSettings" }}',
         }) {
             this.title = title;
             this.description = description;
             this.exportText = exportText;
             this.importText = importText;
+            this.autoBackupText = autoBackupText;
             this.visible = true;
         },
         hide() {
@@ -929,7 +935,12 @@
                     description: '{{ i18n "pages.index.backupDescription" }}',
                     exportText: '{{ i18n "pages.index.exportDatabase" }}',
                     importText: '{{ i18n "pages.index.importDatabase" }}',
+                    autoBackupText: '{{ i18n "pages.index.autoBackupSettings" }}',
                 });
+            },
+            openAutoBackupSettings() {
+                backupModal.hide();
+                window.location = basePath + 'xui/settings?tab=autoBackup';
             },
             exportDatabase() {
                 window.location = basePath + 'server/getDb';

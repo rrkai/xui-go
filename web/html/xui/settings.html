@@ -80,7 +80,7 @@
                                 </a-col>
                             </a-row>
                         </a-card>
-                        <a-tabs default-active-key="1">
+                        <a-tabs :active-key="activeTab" @change="key => activeTab = key">
                             <a-tab-pane key="1" tab='{{ i18n "pages.settings.panelConfig"}}'>
                                 <a-list item-layout="horizontal">
                                     <a-list-item>
@@ -517,6 +517,116 @@
                                     </a-list-item>
                                 </a-list>
                             </a-tab-pane>
+                            <a-tab-pane key="autoBackup" tab='{{ i18n "pages.settings.autoBackupTab" }}'>
+                                <a-list item-layout="horizontal">
+                                    <setting-list-item type="switch"
+                                        title='{{ i18n "pages.settings.autoBackupEnable" }}'
+                                        desc='{{ i18n "pages.settings.autoBackupEnableDesc" }}'
+                                        v-model="allSetting.backupEnable"></setting-list-item>
+                                    <a-list-item style="padding: 20px"
+                                        v-if="['daily', 'weekly', 'monthly'].includes(allSetting.backupFrequency)">
+                                        <a-row>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-list-item-meta title='{{ i18n "pages.settings.autoBackupTime" }}'
+                                                    description='{{ i18n "pages.settings.autoBackupTimeDesc" }}'/>
+                                            </a-col>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-time-picker v-model="backupTime" format="HH:mm"
+                                                    style="width: 100%"
+                                                    :dropdown-class-name="themeSwitcher.currentTheme"></a-time-picker>
+                                            </a-col>
+                                        </a-row>
+                                    </a-list-item>
+                                    <a-list-item style="padding: 20px">
+                                        <a-row>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-list-item-meta title='{{ i18n "pages.settings.autoBackupFrequency" }}'
+                                                    description='{{ i18n "pages.settings.autoBackupFrequencyDesc" }}'/>
+                                            </a-col>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-select v-model="allSetting.backupFrequency" style="width: 100%"
+                                                    :dropdown-class-name="themeSwitcher.currentTheme">
+                                                    <a-select-option value="halfhourly">{{ i18n "pages.settings.backupFrequencyHalfHourly" }}</a-select-option>
+                                                    <a-select-option value="hourly">{{ i18n "pages.settings.backupFrequencyHourly" }}</a-select-option>
+                                                    <a-select-option value="daily">{{ i18n "pages.settings.backupFrequencyDaily" }}</a-select-option>
+                                                    <a-select-option value="weekly">{{ i18n "pages.settings.backupFrequencyWeekly" }}</a-select-option>
+                                                    <a-select-option value="monthly">{{ i18n "pages.settings.backupFrequencyMonthly" }}</a-select-option>
+                                                </a-select>
+                                            </a-col>
+                                        </a-row>
+                                    </a-list-item>
+                                    <setting-list-item type="number"
+                                        title='{{ i18n "pages.settings.autoBackupRetention" }}'
+                                        desc='{{ i18n "pages.settings.autoBackupRetentionDesc" }}'
+                                        v-model.number="allSetting.backupRetention" :min="1" :max="365"></setting-list-item>
+                                    <a-list-item style="padding: 20px">
+                                        <a-row>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-list-item-meta title='{{ i18n "pages.settings.autoBackupType" }}'
+                                                    description='{{ i18n "pages.settings.autoBackupTypeDesc" }}'/>
+                                            </a-col>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-select v-model="backupTypes" mode="multiple" style="width: 100%"
+                                                    :dropdown-class-name="themeSwitcher.currentTheme">
+                                                    <a-select-option value="local">{{ i18n "pages.settings.autoBackupTypeLocal" }}</a-select-option>
+                                                    <a-select-option value="webdav">{{ i18n "pages.settings.autoBackupTypeWebdav" }}</a-select-option>
+                                                    <a-select-option value="ftp">{{ i18n "pages.settings.autoBackupTypeFtp" }}</a-select-option>
+                                                </a-select>
+                                            </a-col>
+                                        </a-row>
+                                    </a-list-item>
+                                    <template v-if="backupTypes.includes('local')">
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupDir" }}'
+                                            desc='{{ i18n "pages.settings.autoBackupDirDesc" }}'
+                                            v-model="allSetting.backupDir"></setting-list-item>
+                                    </template>
+                                    <template v-if="backupTypes.includes('webdav')">
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupWebdavUrl" }}'
+                                            desc='{{ i18n "pages.settings.autoBackupWebdavUrlDesc" }}'
+                                            v-model="allSetting.backupWebdavUrl"></setting-list-item>
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupWebdavUser" }}'
+                                            v-model="allSetting.backupWebdavUser"></setting-list-item>
+                                        <a-list-item style="padding: 20px">
+                                            <a-row>
+                                                <a-col :lg="24" :xl="12">
+                                                    <a-list-item-meta title='{{ i18n "pages.settings.autoBackupWebdavPass" }}'/>
+                                                </a-col>
+                                                <a-col :lg="24" :xl="12">
+                                                    <password-input v-model="allSetting.backupWebdavPass"></password-input>
+                                                </a-col>
+                                            </a-row>
+                                        </a-list-item>
+                                    </template>
+                                    <template v-if="backupTypes.includes('ftp')">
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupFtpHost" }}'
+                                            v-model="allSetting.backupFtpHost"></setting-list-item>
+                                        <setting-list-item type="number"
+                                            title='{{ i18n "pages.settings.autoBackupFtpPort" }}'
+                                            v-model.number="allSetting.backupFtpPort" :min="1" :max="65535"></setting-list-item>
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupFtpUser" }}'
+                                            v-model="allSetting.backupFtpUser"></setting-list-item>
+                                        <a-list-item style="padding: 20px">
+                                            <a-row>
+                                                <a-col :lg="24" :xl="12">
+                                                    <a-list-item-meta title='{{ i18n "pages.settings.autoBackupFtpPass" }}'/>
+                                                </a-col>
+                                                <a-col :lg="24" :xl="12">
+                                                    <password-input v-model="allSetting.backupFtpPass"></password-input>
+                                                </a-col>
+                                            </a-row>
+                                        </a-list-item>
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupFtpDir" }}'
+                                            desc='{{ i18n "pages.settings.autoBackupFtpDirDesc" }}'
+                                            v-model="allSetting.backupFtpDir"></setting-list-item>
+                                    </template>
+                                </a-list>
+                            </a-tab-pane>
                         </a-tabs>
                     </a-space>
                 </a-spin>
@@ -563,6 +673,10 @@
                 siderDrawer,
                 themeSwitcher,
                 spinning: false,
+                activeTab: (() => {
+                    const tab = new URLSearchParams(window.location.search).get('tab');
+                    return ['1', '2', '3', '4', '5', '6', 'autoBackup'].includes(tab) ? tab : '1';
+                })(),
                 oldAllSetting: new AllSetting(),
                 allSetting: new AllSetting(),
                 saveBtnDisable: true,
@@ -867,6 +981,18 @@
                 },
             },
             computed: {
+                backupTypes: {
+                    get: function () {
+                        return (this.allSetting.backupType || '').split(',').map(v => v.trim()).filter(Boolean);
+                    },
+                    set: function (v) {
+                        this.allSetting.backupType = (v || []).join(',');
+                    }
+                },
+                backupTime: {
+                    get: function () { return moment(this.allSetting.backupTime || '05:00', 'HH:mm'); },
+                    set: function (v) { this.allSetting.backupTime = v ? v.format('HH:mm') : '05:00'; }
+                },
                 enableMux: {
                     get: function () { return this.allSetting?.subJsonMux != ""; },
                     set: function (v) {

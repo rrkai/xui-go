@@ -28,6 +28,12 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 
 	g.POST("/list", a.getInbounds)
 	g.POST("/add", a.addInbound)
+	g.POST("/freePort", a.freePort)
+	g.POST("/quickSocks5", a.quickSocks5)
+	g.POST("/quickVless", a.quickVless)
+	g.POST("/quickVmess", a.quickVmess)
+	g.POST("/quickSS2022", a.quickSS2022)
+	g.POST("/quickPortForward", a.quickPortForward)
 	g.POST("/del/:id", a.delInbound)
 	g.POST("/update/:id", a.updateInbound)
 	g.POST("/addClient", a.addInboundClient)

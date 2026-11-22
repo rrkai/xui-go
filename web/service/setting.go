@@ -61,6 +61,21 @@ var defaultValueMap = map[string]string{
 	"subJsonRules":       "",
 	"warp":               "",
 	"ipBlockAfterRemove": "true",
+	"backupEnable":       "false",
+	"backupTime":         "05:00",
+	"backupFrequency":    "daily",
+	"backupRetention":    "3",
+	"backupType":         "local",
+	"backupDir":          "/XUI-GO/Backup",
+	"backupWebdavUrl":    "",
+	"backupWebdavUser":   "",
+	"backupWebdavPass":   "",
+	"backupFtpHost":      "",
+	"backupFtpPort":      "21",
+	"backupFtpUser":      "",
+	"backupFtpPass":      "",
+	"backupFtpDir":       "/",
+	"backupLastRun":      "",
 }
 
 type SettingService struct{}
@@ -389,6 +404,70 @@ func (s *SettingService) GetIpBlockAfterRemove() (bool, error) {
 
 func (s *SettingService) SetIpBlockAfterRemove(value bool) error {
 	return s.setBool("ipBlockAfterRemove", value)
+}
+
+func (s *SettingService) GetBackupEnable() (bool, error) {
+	return s.getBool("backupEnable")
+}
+
+func (s *SettingService) GetBackupTime() (string, error) {
+	return s.getString("backupTime")
+}
+
+func (s *SettingService) GetBackupFrequency() (string, error) {
+	return s.getString("backupFrequency")
+}
+
+func (s *SettingService) GetBackupRetention() (int, error) {
+	return s.getInt("backupRetention")
+}
+
+func (s *SettingService) GetBackupType() (string, error) {
+	return s.getString("backupType")
+}
+
+func (s *SettingService) GetBackupDir() (string, error) {
+	return s.getString("backupDir")
+}
+
+func (s *SettingService) GetBackupWebdavUrl() (string, error) {
+	return s.getString("backupWebdavUrl")
+}
+
+func (s *SettingService) GetBackupWebdavUser() (string, error) {
+	return s.getString("backupWebdavUser")
+}
+
+func (s *SettingService) GetBackupWebdavPass() (string, error) {
+	return s.getString("backupWebdavPass")
+}
+
+func (s *SettingService) GetBackupFtpHost() (string, error) {
+	return s.getString("backupFtpHost")
+}
+
+func (s *SettingService) GetBackupFtpPort() (int, error) {
+	return s.getInt("backupFtpPort")
+}
+
+func (s *SettingService) GetBackupFtpUser() (string, error) {
+	return s.getString("backupFtpUser")
+}
+
+func (s *SettingService) GetBackupFtpPass() (string, error) {
+	return s.getString("backupFtpPass")
+}
+
+func (s *SettingService) GetBackupFtpDir() (string, error) {
+	return s.getString("backupFtpDir")
+}
+
+func (s *SettingService) GetBackupLastRun() (string, error) {
+	return s.getString("backupLastRun")
+}
+
+func (s *SettingService) SetBackupLastRun(value string) error {
+	return s.setString("backupLastRun", value)
 }
 
 func (s *SettingService) GetSubListen() (string, error) {

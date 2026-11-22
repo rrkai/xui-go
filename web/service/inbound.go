@@ -1,8 +1,11 @@
 package service
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"net"
 	"strings"
 	"time"
 
@@ -74,6 +77,54 @@ func (s *InboundService) checkPortExist(listen string, port int, ignoreId int) (
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// GetFreePort returns a random port in [min, max] that is neither used by an
+// existing inbound nor currently bound by another process on this host.
+func (s *InboundService) GetFreePort(min, max int) (int, error) {
+	if min < 1 || max > 65535 || min > max {
+		return 0, common.NewError("invalid port range")
+	}
+	db := database.GetDB()
+	var ports []int
+	if err := db.Model(model.Inbound{}).Pluck("port", &ports).Error; err != nil {
+		return 0, err
+	}
+	used := make(map[int]struct{}, len(ports))
+	for _, port := range ports {
+		used[port] = struct{}{}
+	}
+	span := int64(max - min + 1)
+	for attempt := 0; attempt < 1000; attempt++ {
+		n, err := rand.Int(rand.Reader, big.NewInt(span))
+		if err != nil {
+			return 0, err
+		}
+		port := min + int(n.Int64())
+		if _, exists := used[port]; exists {
+			continue
+		}
+		if !PortAvailable(port) {
+			continue
+		}
+		return port, nil
+	}
+	return 0, common.NewError("no free port available")
+}
+
+// PortAvailable reports whether both TCP and UDP can be bound on the port.
+func PortAvailable(port int) bool {
+	tcpListener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	tcpListener.Close()
+	udpListener, err := net.ListenPacket("udp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	udpListener.Close()
+	return true
 }
 
 func (s *InboundService) GetClients(inbound *model.Inbound) ([]model.Client, error) {
@@ -1240,6 +1291,12 @@ func (s *InboundService) disableInvalidClients(tx *gorm.DB) (bool, int64, error)
 	err := result.Error
 	count := result.RowsAffected
 	return needRestart, count, err
+}
+
+func (s *InboundService) ClientEmailExists(email string) (bool, error) {
+	var count int64
+	err := database.GetDB().Model(xray.ClientTraffic{}).Where("email = ?", email).Count(&count).Error
+	return count > 0, err
 }
 
 func (s *InboundService) AddClientStat(tx *gorm.DB, inboundId int, client *model.Client) error {

@@ -37,6 +37,20 @@ class AllSetting {
         this.subJsonMux = "";
         this.subJsonRules = "";
         this.ipBlockAfterRemove = true;
+        this.backupEnable = false;
+        this.backupTime = "05:00";
+        this.backupFrequency = "daily";
+        this.backupRetention = 3;
+        this.backupType = "local";
+        this.backupDir = "/XUI-GO/Backup";
+        this.backupWebdavUrl = "";
+        this.backupWebdavUser = "";
+        this.backupWebdavPass = "";
+        this.backupFtpHost = "";
+        this.backupFtpPort = 21;
+        this.backupFtpUser = "";
+        this.backupFtpPass = "";
+        this.backupFtpDir = "/";
 
         this.timeLocation = "Asia/Hong_Kong";
 

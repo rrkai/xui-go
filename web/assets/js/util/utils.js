@@ -180,14 +180,16 @@ class RandomUtil {
     }
 
     static randomShortId() {
-        let shortIds = new Array(24).fill('');
-        for (var ii = 1; ii < 24; ii++) {
-            for (var jj = 0; jj <= this.randomInt(7); jj++){
-                let randomNum = this.randomInt(256);
-                shortIds[ii] += ('0' + randomNum.toString(16)).slice(-2)
+        const hex = '0123456789abcdef';
+        const shortIds = new Set();
+        while (shortIds.size < 5) {
+            let shortId = '';
+            for (let i = 0; i < 8; i++) {
+                shortId += hex[this.randomInt(hex.length)];
             }
+            shortIds.add(shortId);
         }
-        return shortIds;
+        return [...shortIds];
     }
 }
 

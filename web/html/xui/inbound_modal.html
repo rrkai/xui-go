@@ -168,6 +168,15 @@
                 }
             }
         },
+        watch: {
+            'inModal.inbound.stream.security'(security) {
+                if (security === 'reality'
+                    && (!this.inModal.inbound.stream.reality.privateKey
+                        || !this.inModal.inbound.stream.reality.settings.publicKey)) {
+                    this.getNewX25519Cert();
+                }
+            }
+        },
         methods: {
             streamNetworkChange() {
                 if (!inModal.inbound.canEnableTls()) {

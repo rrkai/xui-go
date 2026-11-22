@@ -146,7 +146,7 @@ func httpsBaseDir() string {
 	if runtime.GOOS == "windows" {
 		return filepath.Join(filepath.Dir(config.GetDBPath()), "xui-https")
 	}
-	return "/root/xui-https"
+	return "/XUI-GO/HTTP-SSL"
 }
 
 func acmeBaseDir() string {

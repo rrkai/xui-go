@@ -262,6 +262,8 @@ func (s *Server) startTask(ipLimitCron bool) {
 	// Prune daily traffic buckets older than 90 days on the 1st of each month at 05:00
 	s.cron.AddJob("0 0 5 1 * *", job.NewClientTrafficDailyCleanupJob())
 
+	s.cron.AddJob("@every 1m", job.NewAutoBackupJob())
+
 	// Make a traffic condition every day, 8:30
 	var entry cron.EntryID
 	isTgbotenabled, err := s.settingService.GetTgbotenabled()
@@ -300,6 +302,8 @@ func (s *Server) Start() (err error) {
 			s.Stop()
 		}
 	}()
+
+	service.MigrateLegacyXuiGoDir()
 
 	// If the panel crashed while port 80 was temporarily freed for a
 	// certificate request, bring the stopped service back up.

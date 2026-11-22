@@ -64,6 +64,12 @@ const UTLS_FINGERPRINT = {
     UTLS_UNSAFE: "unsafe",
 };
 
+const REALITY_PRESETS = [
+    { dest: 'dl-cdn.alpinelinux.org:443', serverNames: 'dl-cdn.alpinelinux.org' },
+    { dest: 'download-cdn.jetbrains.com:443', serverNames: 'download-cdn.jetbrains.com' },
+    { dest: 'fastcdn.hoyoverse.com:443', serverNames: 'fastcdn.hoyoverse.com' },
+];
+
 const ALPN_OPTION = {
     H3: "h3",
     H2: "h2",
@@ -1041,8 +1047,8 @@ class RealityStreamSettings extends XrayCommonClass {
     constructor(
         show = false,
         xver = 0,
-        dest = 'microsoft.com:443',
-        serverNames = 'microsoft.com,www.microsoft.com',
+        dest = '',
+        serverNames = '',
         privateKey = '',
         minClient = '',
         maxClient = '',
@@ -1054,6 +1060,11 @@ class RealityStreamSettings extends XrayCommonClass {
         limitFallbackDownload = new RealityStreamSettings.LimitFallback()
     ) {
         super();
+        if (!dest || !serverNames) {
+            const preset = RealityStreamSettings.randomPreset();
+            if (!dest) dest = preset.dest;
+            if (!serverNames) serverNames = preset.serverNames;
+        }
         this.show = show;
         this.xver = xver;
         this.dest = dest;
@@ -1067,6 +1078,10 @@ class RealityStreamSettings extends XrayCommonClass {
         this.settings = settings;
         this.limitFallbackUpload = limitFallbackUpload;
         this.limitFallbackDownload = limitFallbackDownload;
+    }
+
+    static randomPreset() {
+        return REALITY_PRESETS[RandomUtil.randomInt(REALITY_PRESETS.length)];
     }
 
     static fromJson(json = {}) {
