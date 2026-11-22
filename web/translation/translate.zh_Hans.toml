@@ -149,6 +149,7 @@
 "updateConfirmDesc" = "确定要在线更新吗？更新过程中面板会短暂重启，完成后页面自动刷新。"
 "updating" = "正在更新，请勿关闭页面；面板重启后会自动刷新。"
 "updateTimeout" = "等待更新超时，请刷新页面确认版本；如仍未更新，请通过 SSH 执行 x-ui 更新。"
+"updateFailed" = "面板更新失败，请查看日志 /var/log/x-ui-update.log 后重试"
 "clickCopy" = "点击复制"
 "since" = "自"
 "sinceEnd" = "起"

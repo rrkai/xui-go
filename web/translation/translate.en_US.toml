@@ -149,6 +149,7 @@
 "updateConfirmDesc" = "Update the panel now? It restarts briefly and this page reloads automatically when the new version is up."
 "updating" = "Updating — keep this page open. It reloads automatically after the panel restarts."
 "updateTimeout" = "Timed out waiting for the panel to come back. Refresh to check the version; if it did not update, run x-ui update over SSH."
+"updateFailed" = "Panel update failed. Check /var/log/x-ui-update.log and try again"
 "clickCopy" = "Click to copy"
 "since" = "Since"
 "sinceEnd" = ""

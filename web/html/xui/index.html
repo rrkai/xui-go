@@ -620,7 +620,7 @@
             rank: {today: [], yesterday: [], beforeYesterday: []},
             expiryItems: [],
             remainingItems: [],
-            updateCheck: {hasUpdate: false, url: '', latest: '', notes: '', publishedAt: '', modalVisible: false, starting: false, updating: false, error: ''},
+            updateCheck: {hasUpdate: false, url: '', latest: '', notes: '', publishedAt: '', fromVersion: '', modalVisible: false, starting: false, updating: false, error: ''},
             i18nOnline: '{{ i18n "pages.index.online" }}',
             i18nOffline: '{{ i18n "pages.index.offline" }}',
             i18nError: '{{ i18n "pages.index.error" }}',
@@ -763,6 +763,9 @@
             async checkUpdate() {
                 try {
                     const msg = await HttpUtil.get('/server/checkUpdate');
+                    if (msg.success && msg.obj) {
+                        this.updateCheck.fromVersion = msg.obj.current || '';
+                    }
                     if (msg.success && msg.obj && msg.obj.hasUpdate) {
                         this.updateCheck.hasUpdate = true;
                         this.updateCheck.url = msg.obj.url || '';
@@ -783,6 +786,7 @@
                 if (this.updateCheck.starting || this.updateCheck.updating) return;
                 this.updateCheck.starting = true;
                 this.updateCheck.error = '';
+                this.updateCheck.fromVersion = this.updateCheck.fromVersion || '{{ .cur_ver }}';
                 try {
                     const msg = await HttpUtil.post('/server/panelUpdate', {});
                     if (!msg.success) {
@@ -798,27 +802,59 @@
                 }
             },
             watchPanelRestart() {
+                const fromVersion = this.updateCheck.fromVersion || '';
                 const deadline = Date.now() + 10 * 60 * 1000;
                 let sawDown = false;
+                let finished = false;
+                const finish = () => {
+                    if (finished) return;
+                    finished = true;
+                    window.location.reload();
+                };
                 const probe = async () => {
+                    if (finished) return;
                     if (Date.now() > deadline) {
                         this.updateCheck.updating = false;
                         this.updateCheck.error = '{{ i18n "pages.index.updateTimeout" }}';
                         return;
                     }
                     try {
-                        const resp = await fetch(window.location.href, {cache: 'no-store'});
+                        const resp = await fetch(basePath + 'server/panelUpdateStatus', {cache: 'no-store'});
                         if (!resp.ok) throw new Error('down');
-                        if (sawDown) {
-                            window.location.reload();
-                            return;
+                        const text = await resp.text();
+                        let status = null;
+                        try {
+                            const data = JSON.parse(text);
+                            status = data && data.success ? data.obj : null;
+                        } catch (parseErr) {
+                            // a login page or other HTML means the session endpoint is unreachable;
+                            // fall back to the version marker embedded in any panel page
+                            const m = text.match(/<meta\s+name="xui-version"\s+content="([^"]+)"/i);
+                            const ver = m ? m[1].trim() : '';
+                            if (ver && ((fromVersion && ver !== fromVersion) || sawDown)) {
+                                finish();
+                                return;
+                            }
                         }
+                        if (status) {
+                            if (status.state === 'done' && status.exitCode !== 0) {
+                                finished = true;
+                                this.updateCheck.updating = false;
+                                this.updateCheck.error = '{{ i18n "pages.index.updateFailed" }} (exit ' + status.exitCode + ')';
+                                return;
+                            }
+                            if (status.version && ((fromVersion && status.version !== fromVersion) || (sawDown && status.state === 'done'))) {
+                                finish();
+                                return;
+                            }
+                        }
+                        sawDown = false;
                     } catch (e) {
                         sawDown = true;
                     }
                     setTimeout(probe, 2000);
                 };
-                setTimeout(probe, 2000);
+                setTimeout(probe, 1500);
             },
             remainingChipClass(item) {
                 if (item.remaining <= 0) {

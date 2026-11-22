@@ -1019,6 +1019,36 @@ func (s *ServerService) CheckUpdate() (*UpdateCheckInfo, error) {
 var panelUpdateMu sync.Mutex
 var panelUpdateRunning bool
 
+const (
+	panelUpdateLogPath    = "/var/log/x-ui-update.log"
+	panelUpdateStatusPath = "/run/x-ui-update.status"
+	panelUpdateRunningVal = "running"
+)
+
+type PanelUpdateStatus struct {
+	Version  string `json:"version"`
+	State    string `json:"state"`
+	ExitCode int    `json:"exitCode"`
+}
+
+func (s *ServerService) GetPanelUpdateStatus() *PanelUpdateStatus {
+	status := &PanelUpdateStatus{Version: config.GetVersion()}
+	data, err := os.ReadFile(panelUpdateStatusPath)
+	if err != nil {
+		return status
+	}
+	value := strings.TrimSpace(string(data))
+	if value == panelUpdateRunningVal {
+		status.State = panelUpdateRunningVal
+		return status
+	}
+	if code, err := strconv.Atoi(value); err == nil {
+		status.State = "done"
+		status.ExitCode = code
+	}
+	return status
+}
+
 func downloadInstallScript() ([]byte, error) {
 	client := &http.Client{Timeout: 20 * time.Second}
 	sources := []struct {
@@ -1095,12 +1125,18 @@ func (s *ServerService) StartPanelUpdate() error {
 	if err := os.WriteFile(scriptPath, script, 0700); err != nil {
 		return err
 	}
+	if err := os.WriteFile(panelUpdateStatusPath, []byte(panelUpdateRunningVal), 0644); err != nil {
+		os.Remove(scriptPath)
+		return err
+	}
 	unit := fmt.Sprintf("xui-panel-update-%d", time.Now().Unix())
-	command := fmt.Sprintf("umask 077; rm -f /var/log/x-ui-update.log; bash %s </dev/null >/var/log/x-ui-update.log 2>&1; rm -f %s", scriptPath, scriptPath)
+	command := fmt.Sprintf("umask 077; rm -f %s; XUI_ONLINE_UPDATE=1 bash %s </dev/null >%s 2>&1; rc=$?; echo $rc >%s; rm -f %s",
+		panelUpdateLogPath, scriptPath, panelUpdateLogPath, panelUpdateStatusPath, scriptPath)
 	out, err := exec.Command("systemd-run", "--unit="+unit, "--collect", "--no-block",
 		"/bin/bash", "-lc", command).CombinedOutput()
 	if err != nil {
 		os.Remove(scriptPath)
+		os.Remove(panelUpdateStatusPath)
 		return common.NewErrorf("failed to start updater: %v %s", err, strings.TrimSpace(string(out)))
 	}
 	panelUpdateRunning = true

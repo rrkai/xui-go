@@ -154,6 +154,10 @@ install_x-ui() {
 
     if [[ -e /usr/local/x-ui/ ]]; then
         systemctl stop x-ui
+        # keep the panel down long enough for pages reloaded by the online updater to see the restart
+        if [[ "${XUI_ONLINE_UPDATE}" == "1" ]]; then
+            sleep 4
+        fi
         mv /usr/local/x-ui/ /usr/local/x-ui-backup/ -f
         cp /etc/x-ui/x-ui.db /usr/local/x-ui-backup/ -f
     fi
