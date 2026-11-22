@@ -154,8 +154,8 @@ install_x-ui() {
 
     if [[ -e /usr/local/x-ui/ ]]; then
         systemctl stop x-ui
-        # keep the panel down long enough for pages reloaded by the online updater to see the restart
-        if [[ "${XUI_ONLINE_UPDATE}" == "1" ]]; then
+        # keep the panel down long enough for open pages to notice the restart during unattended updates
+        if [[ "${XUI_ONLINE_UPDATE}" == "1" || ! -t 0 ]]; then
             sleep 4
         fi
         mv /usr/local/x-ui/ /usr/local/x-ui-backup/ -f
