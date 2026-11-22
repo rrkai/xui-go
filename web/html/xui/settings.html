@@ -128,9 +128,21 @@
                                     <setting-list-item type="number" title='{{ i18n "pages.settings.trafficDiff" }}'
                                         desc='{{ i18n "pages.settings.trafficDiffDesc" }}'
                                         v-model="allSetting.trafficDiff" :min="0"></setting-list-item>
-                                    <setting-list-item type="text" title='{{ i18n "pages.settings.timeZone"}}'
-                                        desc='{{ i18n "pages.settings.timeZoneDesc"}}'
-                                        v-model="allSetting.timeLocation"></setting-list-item>
+                                    <a-list-item>
+                                        <a-row style="padding: 20px">
+                                            <a-col :lg="24" :xl="12">
+                                                <a-list-item-meta title='{{ i18n "pages.settings.timeZone"}}'
+                                                    description='{{ i18n "pages.settings.timeZoneDesc"}}' />
+                                            </a-col>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-select v-model="allSetting.timeLocation" style="width: 100%"
+                                                    :dropdown-class-name="themeSwitcher.currentTheme">
+                                                    <a-select-option v-for="(opt, index) in timeZoneOptions" :key="index"
+                                                        :value="opt.value">[[ opt.label ]]</a-select-option>
+                                                </a-select>
+                                            </a-col>
+                                        </a-row>
+                                    </a-list-item>
                                     <setting-list-item type="text" title='{{ i18n "pages.settings.outboundTestUrl"}}'
                                         desc='{{ i18n "pages.settings.outboundTestUrlDesc"}}'
                                         v-model="allSetting.outboundTestUrl"></setting-list-item>
@@ -723,6 +735,22 @@
                         ]
                     },
                 ],
+                timeZonePresets: (() => {
+                    const hostTZ = '{{ .hostTimeZone }}';
+                    const options = [];
+                    if (hostTZ) {
+                        options.push({ label: '{{ i18n "pages.settings.timeZoneLocal" }}', value: hostTZ });
+                    }
+                    options.push(
+                        { label: '{{ i18n "pages.settings.timeZoneHongKong" }}', value: 'Asia/Hong_Kong' },
+                        { label: '{{ i18n "pages.settings.timeZoneSingapore" }}', value: 'Asia/Singapore' },
+                        { label: '{{ i18n "pages.settings.timeZoneBerlin" }}', value: 'Europe/Berlin' },
+                        { label: '{{ i18n "pages.settings.timeZoneLosAngeles" }}', value: 'America/Los_Angeles' },
+                        { label: '{{ i18n "pages.settings.timeZoneNewYork" }}', value: 'America/New_York' },
+                        { label: '{{ i18n "pages.settings.timeZoneJapanKorea" }}', value: 'Asia/Tokyo' },
+                    );
+                    return options;
+                })(),
                 directIPsOptions: [
                     { label: 'Private IP', value: 'geoip:private' },
                     { label: '🇮🇷 Iran', value: 'geoip:ir' },
@@ -981,6 +1009,14 @@
                 },
             },
             computed: {
+                timeZoneOptions: function () {
+                    const presets = this.timeZonePresets;
+                    const current = this.allSetting.timeLocation;
+                    if (current && !presets.some(o => o.value === current)) {
+                        return [{ label: current, value: current }].concat(presets);
+                    }
+                    return presets;
+                },
                 backupTypes: {
                     get: function () {
                         return (this.allSetting.backupType || '').split(',').map(v => v.trim()).filter(Boolean);

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -28,6 +29,9 @@ var defaultValueMap = map[string]string{
 	"webKeyFile":         "",
 	"secret":             random.Seq(32),
 	"webBasePath":        "/",
+	"syncRole":           "",
+	"syncMasterName":     "",
+	"syncAutoInterval":   "0",
 	"panelTitle":         "",
 	"sessionMaxAge":      "180",
 	"pageSize":           "50",
@@ -373,6 +377,58 @@ func (s *SettingService) GetPanelTitle() (string, error) {
 
 func (s *SettingService) SetPanelTitle(title string) error {
 	return s.setString("panelTitle", title)
+}
+
+func (s *SettingService) GetSyncRole() (string, error) {
+	return s.getString("syncRole")
+}
+
+func (s *SettingService) SetSyncRole(role string) error {
+	return s.setString("syncRole", role)
+}
+
+func (s *SettingService) GetSyncMasterName() (string, error) {
+	return s.getString("syncMasterName")
+}
+
+func (s *SettingService) SetSyncMasterName(name string) error {
+	return s.setString("syncMasterName", name)
+}
+
+func (s *SettingService) GetSyncAutoInterval() (int, error) {
+	return s.getInt("syncAutoInterval")
+}
+
+func (s *SettingService) SetSyncAutoInterval(minutes int) error {
+	return s.setInt("syncAutoInterval", minutes)
+}
+
+// GetHostTimeZone reports the host operating system time zone name (IANA),
+// independent from the panel's own timeLocation setting.
+func GetHostTimeZone() string {
+	if tz := strings.TrimSpace(os.Getenv("TZ")); tz != "" {
+		if _, err := time.LoadLocation(tz); err == nil {
+			return tz
+		}
+	}
+	if data, err := os.ReadFile("/etc/timezone"); err == nil {
+		tz := strings.TrimSpace(string(data))
+		if tz != "" {
+			if _, err := time.LoadLocation(tz); err == nil {
+				return tz
+			}
+		}
+	}
+	if link, err := os.Readlink("/etc/localtime"); err == nil {
+		const marker = "zoneinfo/"
+		if idx := strings.LastIndex(link, marker); idx >= 0 {
+			tz := link[idx+len(marker):]
+			if _, err := time.LoadLocation(tz); err == nil {
+				return tz
+			}
+		}
+	}
+	return ""
 }
 
 func (s *SettingService) GetTimeLocation() (*time.Location, error) {

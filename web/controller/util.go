@@ -3,6 +3,7 @@ package controller
 import (
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/alireza0/x-ui/config"
@@ -66,6 +67,11 @@ func html(c *gin.Context, name string, title string, data gin.H) {
 		host, _, _ = net.SplitHostPort(c.Request.Host)
 	}
 	data["host"] = host
+	if hostname, err := os.Hostname(); err == nil {
+		data["hostname"] = hostname
+	} else {
+		data["hostname"] = host
+	}
 	data["request_uri"] = c.Request.RequestURI
 	data["base_path"] = c.GetString("base_path")
 	data["iplimitSupported"] = c.GetString("iplimitSupported")

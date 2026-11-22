@@ -1,17 +1,20 @@
 package controller
 
 import (
+	"github.com/alireza0/x-ui/web/service"
+
 	"github.com/gin-gonic/gin"
 )
 
 type XUIController struct {
 	BaseController
 
-	inboundController      *InboundController
-	outboundController     *OutboundController
-	routingRuleController  *RoutingRuleController
-	settingController      *SettingController
+	inboundController     *InboundController
+	outboundController    *OutboundController
+	routingRuleController *RoutingRuleController
+	settingController     *SettingController
 	xraySettingController *XraySettingController
+	nodeSyncController    *NodeSyncController
 }
 
 func NewXUIController(g *gin.RouterGroup) *XUIController {
@@ -28,6 +31,7 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	g.GET("/inbounds", a.inbounds)
 	g.GET("/outbounds", a.outbounds)
 	g.GET("/routing", a.routingRules)
+	g.GET("/node_sync", a.nodeSync)
 	g.GET("/settings", a.settings)
 	g.GET("/xray", a.xraySettings)
 
@@ -36,6 +40,7 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	a.routingRuleController = NewRoutingRuleController(g)
 	a.settingController = NewSettingController(g)
 	a.xraySettingController = NewXraySettingController(g)
+	a.nodeSyncController = NewNodeSyncController(g)
 }
 
 func (a *XUIController) index(c *gin.Context) {
@@ -54,8 +59,12 @@ func (a *XUIController) routingRules(c *gin.Context) {
 	html(c, "routing_rules.html", "pages.routingRules.title", nil)
 }
 
+func (a *XUIController) nodeSync(c *gin.Context) {
+	html(c, "node_sync.html", "pages.nodeSync.title", nil)
+}
+
 func (a *XUIController) settings(c *gin.Context) {
-	html(c, "settings.html", "pages.settings.title", nil)
+	html(c, "settings.html", "pages.settings.title", gin.H{"hostTimeZone": service.GetHostTimeZone()})
 }
 
 func (a *XUIController) xraySettings(c *gin.Context) {

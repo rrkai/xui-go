@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<style>
+    @media (min-width: 769px) {
+        .ant-layout-content { margin: 24px 16px; }
+    }
+    @media (max-width: 768px) {
+        .ant-card-body { padding: .5rem; }
+    }
+    .node-sync-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+    .node-sync-desc {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+        opacity: .65;
+    }
+    .node-sync-address {
+        word-break: break-all;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+    }
+    .node-sync-auto {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px dashed rgba(128, 128, 128, .25);
+    }
+    .node-sync-auto-label {
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .node-sync-auto-hint {
+        font-size: 12px;
+        opacity: .6;
+    }
+</style>
+<body>
+<a-layout id="app" v-cloak :class="themeSwitcher.currentTheme">
+    {{ template "commonSider" . }}
+    <a-layout id="content-layout">
+        <a-layout-content>
+            <a-spin :spinning="spinning" :delay="500" tip='{{ i18n "loading"}}'>
+                <a-alert v-if="isSlave" type="warning" show-icon style="margin-bottom: 12px"
+                         :message="slaveAlertText"></a-alert>
+                <a-card hoverable style="margin-bottom: 12px;">
+                    <div class="node-sync-head">
+                        <div>
+                            <a-icon type="sync" style="font-size: 18px;"></a-icon>
+                            <strong style="font-size: 16px; margin-left: 6px;">{{ i18n "pages.nodeSync.title" }}</strong>
+                            <span class="node-sync-desc">{{ i18n "pages.nodeSync.desc" }}</span>
+                        </div>
+                        <a-button type="primary" icon="plus" :disabled="isSlave" @click="openAdd">
+                            {{ i18n "pages.nodeSync.addNode" }}
+                        </a-button>
+                    </div>
+                    <div class="node-sync-auto" v-if="!isSlave">
+                        <span class="node-sync-auto-label">[[ autoTexts.label ]]</span>
+                        <a-select v-model="autoInterval" size="small" style="width: 140px"
+                                  :disabled="savingAuto || nodes.length === 0">
+                            <a-select-option v-for="opt in autoTexts.options" :key="opt.value" :value="opt.value">
+                                [[ opt.label ]]
+                            </a-select-option>
+                        </a-select>
+                        <a-button size="small" type="primary" :loading="savingAuto"
+                                  :disabled="nodes.length === 0" @click="saveAuto">
+                            {{ i18n "pages.nodeSync.autoSave" }}
+                        </a-button>
+                        <a-button size="small" v-if="autoEnabled" :disabled="savingAuto" @click="disableAuto">
+                            {{ i18n "pages.nodeSync.autoDisable" }}
+                        </a-button>
+                        <a-tag :color="autoEnabled ? 'green' : ''">
+                            [[ autoEnabled ? autoTexts.on : autoTexts.off ]]
+                        </a-tag>
+                        <span v-if="nodes.length === 0" class="node-sync-auto-hint">
+                            {{ i18n "pages.nodeSync.autoNeedNodes" }}
+                        </span>
+                    </div>
+                </a-card>
+                <a-card>
+                    <a-table :columns="columns" :data-source="nodes" row-key="id"
+                             :pagination="false" :scroll="{x: 900}"
+                             :locale="{emptyText: '{{ i18n "pages.nodeSync.empty" }}'}">
+                        <span slot="address" slot-scope="text">
+                            <span class="node-sync-address">[[ text ]]</span>
+                        </span>
+                        <span slot="status" slot-scope="text, record">
+                            <a-tag :color="record.ready ? 'green' : 'orange'">
+                                [[ record.ready ? readyText : pendingText ]]
+                            </a-tag>
+                        </span>
+                        <span slot="lastSync" slot-scope="text">
+                            [[ text ? formatTime(text) : neverText ]]
+                        </span>
+                        <span slot="actions" slot-scope="text, record">
+                            <a-dropdown :trigger="['click']">
+                                <a-button size="small" type="primary" icon="menu">
+                                    {{ i18n "pages.nodeSync.operate" }}
+                                </a-button>
+                                <a-menu slot="overlay" @click="({key}) => handleAction(key, record)"
+                                        :theme="themeSwitcher.currentTheme">
+                                    <a-menu-item v-if="!record.ready" key="init">
+                                        <a-icon type="thunderbolt"></a-icon>
+                                        {{ i18n "pages.nodeSync.syncInit" }}
+                                    </a-menu-item>
+                                    <a-menu-item v-if="record.ready" key="push">
+                                        <a-icon type="cloud-download"></a-icon>
+                                        {{ i18n "pages.nodeSync.pushSync" }}
+                                    </a-menu-item>
+                                    <a-menu-item key="merge">
+                                        <a-icon type="merge-cells"></a-icon>
+                                        {{ i18n "pages.nodeSync.mergeData" }}
+                                    </a-menu-item>
+                                    <a-menu-item key="edit">
+                                        <a-icon type="edit"></a-icon>
+                                        {{ i18n "pages.nodeSync.editNode" }}
+                                    </a-menu-item>
+                                    <a-menu-item key="delete">
+                                        <a-icon type="delete"></a-icon>
+                                        <span style="color: #e5484d;">{{ i18n "pages.nodeSync.deleteNode" }}</span>
+                                    </a-menu-item>
+                                </a-menu>
+                            </a-dropdown>
+                        </span>
+                    </a-table>
+                </a-card>
+            </a-spin>
+        </a-layout-content>
+    </a-layout>
+
+<a-modal id="node-sync-modal" v-model="modal.visible" :title="modal.title"
+         :confirm-loading="modal.saving" :ok-text="okText" :cancel-text="cancelText"
+         :mask-closable="false" :class="themeSwitcher.currentTheme" @ok="saveNode">
+    <a-form layout="vertical">
+        <a-form-item :label="labels.remark">
+            <a-input v-model="modal.form.remark" maxLength="64" :placeholder="labels.remark"></a-input>
+        </a-form-item>
+        <a-form-item :label="labels.address" required>
+            <a-input v-model="modal.form.address" :placeholder="labels.addressHint"></a-input>
+        </a-form-item>
+        <a-form-item :label="labels.username" required>
+            <a-input v-model="modal.form.username"></a-input>
+        </a-form-item>
+        <a-form-item :label="labels.password">
+            <a-input-password v-model="modal.form.password"
+                              :placeholder="modal.isEdit ? labels.passwordKeep : labels.password"></a-input-password>
+        </a-form-item>
+    </a-form>
+</a-modal>
+</a-layout>
+
+{{template "js" .}}
+{{template "component/themeSwitcher" .}}
+<script>
+    const nodeSyncApp = new Vue({
+        delimiters: ['[[', ']]'],
+        el: '#app',
+        data: {
+            siderDrawer,
+            themeSwitcher,
+            spinning: false,
+            role: '',
+            masterName: '',
+            nodes: [],
+            autoInterval: 5,
+            autoEnabled: false,
+            savingAuto: false,
+            autoTexts: {
+                label: '{{ i18n "pages.nodeSync.autoSync" }}',
+                on: '{{ i18n "pages.nodeSync.autoOn" }}',
+                off: '{{ i18n "pages.nodeSync.autoOff" }}',
+                needNodes: '{{ i18n "pages.nodeSync.autoNeedNodes" }}',
+                enabledToast: '{{ i18n "pages.nodeSync.autoOnToast" }}',
+                disabledToast: '{{ i18n "pages.nodeSync.autoOffToast" }}',
+                options: [
+                    { value: 5, label: '{{ i18n "pages.nodeSync.autoEvery5" }}' },
+                    { value: 10, label: '{{ i18n "pages.nodeSync.autoEvery10" }}' },
+                    { value: 30, label: '{{ i18n "pages.nodeSync.autoEvery30" }}' },
+                    { value: 60, label: '{{ i18n "pages.nodeSync.autoEvery60" }}' },
+                    { value: 1440, label: '{{ i18n "pages.nodeSync.autoEvery1440" }}' },
+                ],
+            },
+            okText: '{{ i18n "confirm" }}',
+            cancelText: '{{ i18n "cancel" }}',
+            readyText: '{{ i18n "pages.nodeSync.statusReady" }}',
+            pendingText: '{{ i18n "pages.nodeSync.statusPending" }}',
+            neverText: '{{ i18n "pages.nodeSync.never" }}',
+            slaveAlert: '{{ i18n "pages.nodeSync.slaveAlert" }}',
+            slaveMasterLabel: '{{ i18n "pages.nodeSync.slaveMaster" }}',
+            labels: {
+                remark: '{{ i18n "pages.nodeSync.remark" }}',
+                address: '{{ i18n "pages.nodeSync.address" }}',
+                addressHint: '{{ i18n "pages.nodeSync.addressHint" }}',
+                username: '{{ i18n "pages.nodeSync.username" }}',
+                password: '{{ i18n "pages.nodeSync.password" }}',
+                passwordKeep: '{{ i18n "pages.nodeSync.passwordKeep" }}',
+            },
+            columns: [
+                { title: '{{ i18n "pages.nodeSync.remark" }}', dataIndex: 'remark', width: 150, ellipsis: true },
+                { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 280, scopedSlots: { customRender: 'address' } },
+                { title: '{{ i18n "pages.nodeSync.status" }}', width: 110, scopedSlots: { customRender: 'status' } },
+                { title: '{{ i18n "pages.nodeSync.lastSync" }}', dataIndex: 'lastSync', width: 170, scopedSlots: { customRender: 'lastSync' } },
+                { title: '{{ i18n "pages.nodeSync.operate" }}', width: 110, scopedSlots: { customRender: 'actions' } },
+            ],
+            modal: {
+                visible: false,
+                saving: false,
+                isEdit: false,
+                id: 0,
+                title: '{{ i18n "pages.nodeSync.addTitle" }}',
+                form: { remark: '', address: '', username: '', password: '' },
+            },
+        },
+        computed: {
+            isSlave() {
+                return this.role === 'slave';
+            },
+            slaveAlertText() {
+                if (!this.masterName) {
+                    return this.slaveAlert;
+                }
+                return `${this.slaveAlert} (${this.slaveMasterLabel}: ${this.masterName})`;
+            },
+        },
+        methods: {
+            async getNodes() {
+                this.spinning = true;
+                try {
+                    const msg = await HttpUtil.get('/xui/node_sync/nodes');
+                    if (msg.success && msg.obj) {
+                        this.role = msg.obj.role || '';
+                        this.masterName = msg.obj.masterName || '';
+                        this.nodes = msg.obj.nodes || [];
+                        this.autoEnabled = (msg.obj.autoInterval || 0) > 0;
+                        this.autoInterval = this.autoEnabled ? msg.obj.autoInterval : 5;
+                    }
+                } finally {
+                    this.spinning = false;
+                }
+            },
+            async saveAuto() {
+                this.savingAuto = true;
+                try {
+                    const msg = await HttpUtil.post('/xui/node_sync/auto', { interval: this.autoInterval });
+                    if (msg.success) {
+                        this.$message.success(this.autoTexts.enabledToast);
+                        await this.getNodes();
+                    }
+                } finally {
+                    this.savingAuto = false;
+                }
+            },
+            async disableAuto() {
+                this.savingAuto = true;
+                try {
+                    const msg = await HttpUtil.post('/xui/node_sync/auto', { interval: 0 });
+                    if (msg.success) {
+                        this.$message.success(this.autoTexts.disabledToast);
+                        await this.getNodes();
+                    }
+                } finally {
+                    this.savingAuto = false;
+                }
+            },
+            formatTime(ts) {
+                const d = new Date(ts * 1000);
+                const pad = n => String(n).padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            },
+            openAdd() {
+                this.modal.isEdit = false;
+                this.modal.id = 0;
+                this.modal.title = '{{ i18n "pages.nodeSync.addTitle" }}';
+                this.modal.form = { remark: '', address: '', username: '', password: '' };
+                this.modal.visible = true;
+            },
+            openEdit(record) {
+                this.modal.isEdit = true;
+                this.modal.id = record.id;
+                this.modal.title = '{{ i18n "pages.nodeSync.editTitle" }}';
+                this.modal.form = {
+                    remark: record.remark || '',
+                    address: record.address || '',
+                    username: record.username || '',
+                    password: '',
+                };
+                this.modal.visible = true;
+            },
+            async saveNode() {
+                const form = this.modal.form;
+                if (!form.address.trim() || !form.username.trim() || (!this.modal.isEdit && !form.password)) {
+                    this.$message.error('{{ i18n "pages.nodeSync.requiredFields" }}');
+                    return;
+                }
+                this.modal.saving = true;
+                try {
+                    let msg;
+                    if (this.modal.isEdit) {
+                        msg = await HttpUtil.post(`/xui/node_sync/update/${this.modal.id}`, form);
+                        if (msg.success) {
+                            this.modal.visible = false;
+                            await this.getNodes();
+                        }
+                    } else {
+                        msg = await HttpUtil.post('/xui/node_sync/add', form);
+                        if (msg.success) {
+                            this.modal.visible = false;
+                            await this.getNodes();
+                            this.$confirm({
+                                title: '{{ i18n "pages.nodeSync.verifyTitle" }}',
+                                content: '{{ i18n "pages.nodeSync.verifyInitPrompt" }}',
+                                okText: '{{ i18n "pages.nodeSync.syncInit" }}',
+                                cancelText: '{{ i18n "pages.nodeSync.initLater" }}',
+                                class: themeSwitcher.currentTheme,
+                                onOk: () => this.runInit(msg.obj.id),
+                            });
+                        }
+                    }
+                } finally {
+                    this.modal.saving = false;
+                }
+            },
+            handleAction(key, record) {
+                switch (key) {
+                    case 'init':
+                        this.confirmInit(record);
+                        break;
+                    case 'push':
+                        this.confirmPush(record);
+                        break;
+                    case 'merge':
+                        this.confirmMerge(record);
+                        break;
+                    case 'edit':
+                        this.openEdit(record);
+                        break;
+                    case 'delete':
+                        this.confirmDelete(record);
+                        break;
+                }
+            },
+            confirmInit(record) {
+                this.$confirm({
+                    title: '{{ i18n "pages.nodeSync.syncInit" }}',
+                    content: '{{ i18n "pages.nodeSync.initConfirm" }}',
+                    okText: '{{ i18n "confirm" }}',
+                    cancelText: '{{ i18n "cancel" }}',
+                    class: themeSwitcher.currentTheme,
+                    onOk: () => this.runInit(record.id),
+                });
+            },
+            async runInit(id) {
+                const msg = await HttpUtil.post(`/xui/node_sync/init/${id}`, {});
+                if (msg.success) {
+                    await this.getNodes();
+                }
+            },
+            confirmPush(record) {
+                this.$confirm({
+                    title: '{{ i18n "pages.nodeSync.pushSync" }}',
+                    content: '{{ i18n "pages.nodeSync.pushConfirm" }}',
+                    okText: '{{ i18n "confirm" }}',
+                    cancelText: '{{ i18n "cancel" }}',
+                    class: themeSwitcher.currentTheme,
+                    onOk: async () => {
+                        const msg = await HttpUtil.post(`/xui/node_sync/push/${record.id}`, {});
+                        if (msg.success) {
+                            await this.getNodes();
+                        }
+                    },
+                });
+            },
+            confirmMerge(record) {
+                this.$confirm({
+                    title: '{{ i18n "pages.nodeSync.mergeData" }}',
+                    content: '{{ i18n "pages.nodeSync.mergeConfirm" }}',
+                    okText: '{{ i18n "confirm" }}',
+                    cancelText: '{{ i18n "cancel" }}',
+                    class: themeSwitcher.currentTheme,
+                    onOk: async () => {
+                        const msg = await HttpUtil.post(`/xui/node_sync/merge/${record.id}`, {});
+                        if (msg.success) {
+                            const r = msg.obj || {};
+                            const summary = '{{ i18n "pages.nodeSync.mergeSummary" }}'
+                                .replace('{inbounds}', r.inbounds || 0)
+                                .replace('{outbounds}', r.outbounds || 0)
+                                .replace('{rules}', r.rules || 0)
+                                .replace('{skipped}', r.skipped || 0);
+                            this.$message.info(summary);
+                            await this.getNodes();
+                        }
+                    },
+                });
+            },
+            confirmDelete(record) {
+                this.$confirm({
+                    title: '{{ i18n "pages.nodeSync.deleteNode" }}',
+                    content: '{{ i18n "pages.nodeSync.deleteConfirm" }}',
+                    okText: '{{ i18n "confirm" }}',
+                    cancelText: '{{ i18n "cancel" }}',
+                    okType: 'danger',
+                    class: themeSwitcher.currentTheme,
+                    onOk: async () => {
+                        const msg = await HttpUtil.post(`/xui/node_sync/delete/${record.id}`, {});
+                        if (msg.success) {
+                            if (msg.obj) {
+                                this.$warning({title: msg.obj, class: themeSwitcher.currentTheme});
+                            }
+                            await this.getNodes();
+                        }
+                    },
+                });
+            },
+        },
+        async mounted() {
+            await this.getNodes();
+        },
+    });
+</script>
+</body>
+</html>

@@ -264,6 +264,9 @@ func (s *Server) startTask(ipLimitCron bool) {
 
 	s.cron.AddJob("@every 1m", job.NewAutoBackupJob())
 
+	// Push master data to ready slave panels on the configured interval.
+	s.cron.AddJob("@every 30s", job.NewNodeSyncAutoJob())
+
 	// Make a traffic condition every day, 8:30
 	var entry cron.EntryID
 	isTgbotenabled, err := s.settingService.GetTgbotenabled()
