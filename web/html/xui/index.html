@@ -732,6 +732,11 @@
                 }
                 hostTitleModal.hide();
                 await this.getStatus();
+                const name = (this.status.hostInfo.hostname || '').trim();
+                const sepIndex = document.title.indexOf(' - ');
+                if (name && sepIndex >= 0) {
+                    document.title = name + document.title.slice(sepIndex);
+                }
             },
             copyText(text) {
                 if (!text) {

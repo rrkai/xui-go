@@ -9,6 +9,7 @@ import (
 	"github.com/alireza0/x-ui/config"
 	"github.com/alireza0/x-ui/logger"
 	"github.com/alireza0/x-ui/web/entity"
+	"github.com/alireza0/x-ui/web/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -67,7 +68,9 @@ func html(c *gin.Context, name string, title string, data gin.H) {
 		host, _, _ = net.SplitHostPort(c.Request.Host)
 	}
 	data["host"] = host
-	if hostname, err := os.Hostname(); err == nil {
+	if panelTitle, err := (&service.SettingService{}).GetPanelTitle(); err == nil && panelTitle != "" {
+		data["hostname"] = panelTitle
+	} else if hostname, err := os.Hostname(); err == nil {
 		data["hostname"] = hostname
 	} else {
 		data["hostname"] = host

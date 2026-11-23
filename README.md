@@ -1,41 +1,53 @@
-# X-UI 1.11.4 定制版
-
-基于 [alireza0/x-ui](https://github.com/alireza0/x-ui) v1.11.4 的定制分支，遵循 GPLv3。
+# XUI-GO 面板
 
 ![Release](https://img.shields.io/github/v/release/rrkai/xui-go)
 ![License](https://img.shields.io/badge/license-GPL%20V3-blue.svg)
 
 > **免责声明：** 本项目仅供个人学习与通信使用，请勿用于任何非法用途，不建议直接用于生产环境。
 
-## 相对上游的主要改动
+## 功能一览
 
-| 项目 | 说明 |
-| --- | --- |
-| 界面语言 | 仅保留中文 / English，默认强制中文；不再根据浏览器 `Accept-Language` 自动切换，只认语言 cookie |
-| 默认时区 | `Asia/Hong_Kong`（新建数据库生效；导入旧库后可在设置页修改） |
-| 管理脚本 | `x-ui.sh` 全菜单汉化，安装 / 更新 / 重装地址全部指向本仓库 |
-| Xray 版本 | 默认安装 `v26.6.27`；可在面板首页的版本弹窗中切换其他版本（列表最低 `v26.4.25`，离线时回退为默认版本） |
-| 出站列表 | 与入站一致的分页 + 全字段搜索（tag、协议、地址、端口、settings/streamSettings 内容） |
-| SQLite | WAL + `synchronous=NORMAL` + `busy_timeout=10s` + `txlock=IMMEDIATE`；`cache_size` 按内存自动（感知 cgroup，可用环境变量覆盖）；连接池 4/2（空闲 3 分钟回收）；`client_traffics.inbound_id` 索引；备份前 checkpoint，导入时清理 WAL sidecar |
+### 节点同步
 
-> SQLite 调优参数由程序在启动时施加，不存储在数据库文件中，因此导入其他数据库不会覆盖这些参数；导入只会带回 settings 表中的业务配置（时区、TG 语言、分页大小等）。
+- 主 / 副面板模式：把其他 XUI-GO 面板添加为副面板，集中下放入站、出站和路由列表
+- 同步初始化：主面板导出数据库快照，副面板整库还原，同时保留副面板的端口、路径、证书和登录账号
+- 下发同步：只下发入站 / 出站 / 路由；按客户端邮箱保留流量计数
+- 热加载：按 tag 差异增删，路由通过 Xray API 热更新，未变化的条目不触碰，正常同步不重启内核、不断现有连接
+- 数据合并：把副面板数据并回主面板，按端口 / tag / 内容去重，只补缺不覆盖、不删除
+- 自动同步：5 / 10 / 30 / 60 分钟或 24 小时，只对已初始化的副面板执行，与手动同步互斥
+- 状态实时检测：面板地址错误 / 用户名密码错误 / 面板连接超时三种胶囊，具体原因悬停可见
+- 节点密码使用面板 secret 派生密钥 AES-GCM 加密存储；编辑面板信息时可直接查看已保存的密码（明文）
 
-## 快速概览
+### 面板与界面
 
-| 功能 | 支持 |
-| --- | :---: |
-| 多协议 | :heavy_check_mark: |
-| 中 / 英双语（默认中文） | :heavy_check_mark: |
-| 多客户端 / 多入站 | :heavy_check_mark: |
-| 高级流量路由界面 | :heavy_check_mark: |
-| 客户端 / 流量 / 系统状态 | :heavy_check_mark: |
-| 按首次使用时间计算到期与流量上限 | :heavy_check_mark: |
-| REST API | :heavy_check_mark: |
-| Telegram 机器人（数据库备份 + 管理 + 客户端查询） | :heavy_check_mark: |
-| 订阅服务（链接 + 信息） | :heavy_check_mark: |
-| 深度搜索 | :heavy_check_mark: |
-| 深色 / 浅色主题 | :heavy_check_mark: |
-| 客户端 IP 限制（仅 Linux，依赖 nftables） | :heavy_check_mark:* |
+- 中 / 英双语，默认中文（只认语言 Cookie，不跟随浏览器 `Accept-Language`）
+- 深色 / 浅色主题，页面加载动画跟随当前主题，不会先白闪再变黑
+- 面板标题：仪表台顶部名称可点击修改，浏览器标签页与登录页的标题同步使用该名称
+- 时区下拉预设：本机时区 / 香港时区 / 新加坡时区 / 德国柏林时区 / 洛杉矶时区 / 纽约时区 / 日韩时区；新库默认香港时区
+- 入站 / 出站列表分页与全字段搜索（tag、协议、地址、端口、settings / streamSettings 内容）
+- 订阅服务（多链接）、客户端流量与到期限制、按首次使用时间起算、IP 限制（nftables，仅 Linux）
+- Telegram 机器人：定时报表、登录通知、负载告警、客户端查询、数据库备份
+
+### 运维与更新
+
+- 面板内在线更新：显示进度，完成后按版本号自动刷新；失败直接提示退出码，可重试，日志见 `/var/log/x-ui-update.log`
+- 在线切换 Xray 版本：默认 `v26.6.27`，最低 `v26.4.25`，离线时回退默认版本
+- 管理脚本 `x-ui` 全菜单汉化，安装 / 更新地址全部指向本仓库
+- SQLite 启动调优：WAL、`synchronous=NORMAL`、`busy_timeout=10s`、`txlock=IMMEDIATE`，`cache_size` 按内存自动
+- 面板证书自动化：全新安装自动申请 IP 证书（Let's Encrypt，约 6 天有效，自动续期），支持 ZeroSSL（域名需 EAB）
+- 同端口 HTTP / HTTPS 自适应：证书有效时 HTTP 自动跳转 HTTPS，证书缺失或过期时保留 HTTP 入口
+
+## 界面预览
+
+![登录](media/login.png)
+![仪表台](media/dashboard.png)
+![仪表台 · 深色](media/dashboard-dark.png)
+![入站列表](media/inbounds.png)
+![出站列表](media/outbounds.png)
+![路由规则](media/routing.png)
+![节点同步](media/node-sync.png)
+![节点同步 · 深色](media/node-sync-dark.png)
+![面板设置](media/settings.png)
 
 ## 安装与升级
 
@@ -105,7 +117,7 @@ systemctl restart x-ui
 
 ## Docker 部署
 
-仓库自带 `Dockerfile`。注意：`docker-compose.yml` 中的 `image` 仍指向上游镜像，使用前请改为本地构建，或直接使用下面的命令。
+仓库自带 `Dockerfile`，本地构建后运行：
 
 ```sh
 git clone https://github.com/rrkai/xui-go.git
@@ -122,46 +134,125 @@ docker run -itd \
     x-ui
 ```
 
-## 语言
+## 节点同步使用说明
 
-- 中文（默认，强制）
-- English
+### 角色规则
 
-## 功能特性
+- 添加了副面板的面板即为主面板；被添加的面板自动成为副面板。
+- 副面板不能再添加其他面板（前端禁用，后端拒绝），也不能开启自动同步。
+- 只支持 XUI-GO 面板作为副面板（校验 app 标识），原版 x-ui 或低版本会明确提示。
+- 节点列表位于菜单 **路由列表 → 节点同步**。
 
-- 支持 VLESS、VMess、Trojan、Shadowsocks、Dokodemo-door、SOCKS、HTTP、Wireguard 等协议
-- 支持 XTLS，包括 Vision 与 REALITY
-- 高级流量路由界面：PROXY Protocol、Reverse、External、Transparent Proxy，以及多域名、SSL 证书、端口配置
-- 支持通过 Wireguard 出站自动生成 Cloudflare WARP
-- 可视化 JSON 编辑器，编辑 Xray 模板配置
-- 入站 / 出站高级配置界面
-- 客户端流量上限与到期时间可按首次使用时间起算
-- 按客户端限制并发 IP 数（nftables，仅 Linux）
-- 在线客户端、流量统计、系统状态监控
-- 数据库深度搜索
-- 展示已耗尽（过期或超流量）的客户端
-- 订阅服务（多链接）
-- 数据库导入 / 导出
-- 全新安装自动申请面板 IP 证书（Let's Encrypt，约 6 天有效，自动续期）
-- 面板安全：证书状态、公网 80 端口检测、Let's Encrypt / ZeroSSL 切换、临时释放 80 端口
-- 同端口 HTTP/HTTPS 自适应：证书有效时 HTTP 自动跳转 HTTPS，证书缺失或过期时保留 HTTP 入口
-- 面板与订阅服务的 HTTPS 访问（自有域名 + 证书）
-- 深色 / 浅色主题
+### 添加副面板并初始化
 
-## 界面预览
+1. 在主面板点击“添加面板”，填写副面板地址（带 WebBasePath）、用户名和密码，备注可选。
+2. 保存时会自动登录验证；验证通过后提示执行“同步初始化”。
+3. 初始化会把主面板的数据库快照上传到副面板整库还原：设置与全部列表以主面板为准，副面板的**端口、WebBasePath、证书、登录账号**保留，面板继续可访问。
+4. 初始化完成后，副面板标记为副面板并清空自身节点列表，状态变为“已就绪”。
 
-![入站列表](./media/inbounds.png)
-![深色入站列表](./media/inbounds-dark.png)
-![出站列表](./media/outbounds.png)
-![路由规则](./media/rules.png)
-![WARP](./media/warp.png)
+### 下发同步
 
-## API 路由
+- 初始化完成后，点击“下发同步”并确认即执行；只下发入站、出站和路由列表。
+- 客户端的流量计数按邮箱保留，新客户端从零开始。
+- 下发采用热加载：入站 / 出站按 tag 差异增删，路由规则通过 Xray API 热更新；未变化的条目不触碰，不会重启内核或断开现有连接。仅当 Xray API 失败时才标记待重启，由后台兜底重载。
 
-<details>
-  <summary>展开查看</summary>
+### 数据合并
+
+- “数据合并”把副面板数据并回主面板：入站按端口、出站按 tag、路由按内容去重，只补缺不覆盖、不删除。
+
+### 自动同步
+
+- 在页面选择频率并点击“保存并开启”即生效：默认 5 分钟，可选 10 / 30 / 60 分钟或 24 小时。
+- “关闭自动同步”立即停止；删除最后一个副面板时自动关闭。
+- 只对已完成初始化的副面板执行，自动同步与手动同步互斥。
+
+### 状态说明
+
+页面打开、编辑保存、初始化 / 下发 / 合并结束后都会实时检测副面板连通性，状态只有三种：
+
+| 状态 | 含义 |
+| --- | --- |
+| 面板地址错误 | 地址无法访问、目标不是 XUI-GO，或目标已不是副面板；悬停可看具体原因 |
+| 用户名密码错误 | 登录被副面板拒绝，检查节点用户名 / 密码 |
+| 面板连接超时 | 网络不可达或响应超时 |
+
+修改副面板根路径或账号密码后，只要目标仍是副面板，主面板会保持“已就绪”，不需要重新初始化。只有副面板被释放或降级时才需要重新初始化。
+
+### 通过 API 触发同步
+
+适合用 API 批量增删改入站、出站、路由的自动化场景：改完后额外调用一次下发接口即可，无需等待自动同步周期。
+
+```sh
+BASE="https://你的面板:端口/你的WebBasePath"
+curl -sk -c cookie.txt -X POST "$BASE/login" -d "username=用户名&password=密码"
+
+# 查询角色与副面板列表（含 id、lastSync）
+curl -sk -b cookie.txt "$BASE/xui/API/node_sync/nodes"
+
+# 向全部已初始化的副面板下发一次
+curl -sk -b cookie.txt -X POST "$BASE/xui/API/node_sync/push"
+
+# 只向指定副面板下发（id 来自 nodes 接口）
+curl -sk -b cookie.txt -X POST "$BASE/xui/API/node_sync/push/6"
+```
+
+返回示例：
+
+```json
+{"success":true,"msg":"下发同步成功","obj":{
+  "total":1,"succeeded":1,"failed":0,
+  "items":[{"id":6,"remark":"香港备份节点","success":true,"lastSync":1795454239,
+    "applied":{"inbounds":1,"outbounds":2,"routingRules":0,"hotReload":true}}]}}
+```
+
+- 部分副面板失败不影响其他节点，失败原因见 `items[].message`。
+- 全部失败或没有已就绪的副面板时 `success` 为 `false`。
+- 撞上自动同步正在执行时，接口最多等待 10 秒重试，避免瞬时“正在同步中”。
+
+### 注意事项
+
+- 副面板初始化后，其入站 / 出站 / 路由以主面板为准；副面板上的本地改动会在下次下发时被覆盖。
+- 节点密码使用面板 secret 派生密钥加密存储，接口不回传密码；编辑面板信息时会显示已保存的密码明文。
+- 删除副面板会同时通知副面板解除副属性。
+
+## 面板在线更新
+
+- 首页出现“有更新”后，点击更新并在弹窗确认即可；也可用 SSH 执行 `x-ui update`。
+- 面板内更新会在临时 systemd 单元中执行，更新完成后按面板版本号判断，页面自动刷新，不再停留在“正在更新”。
+- 更新失败会直接显示退出码并允许重试，排查日志：`/var/log/x-ui-update.log`。
+- 数据目录与数据库在更新后保留。
+- 同一版本号的重新发布不会触发更新提示（版本号相同），需要更新时手动执行一次 `x-ui update`。
+
+## 面板标题与外观
+
+### 面板标题
+
+- 仪表台顶部的名称可直接点击编辑（最长 64 字符），保存后作为面板名称。
+- 浏览器标签页标题为“面板名称 - 页面名称”，登录页同样使用该名称。
+- 名称为空时回退为服务器主机名；修改后标签页立即更新，无需刷新。
+
+### 时区
+
+- 设置页提供下拉预设，按顺序：本机时区 / 香港时区 / 新加坡时区 / 德国柏林时区 / 洛杉矶时区 / 纽约时区 / 日韩时区。
+- “本机时区”自动读取宿主系统时区；自定义时区值会保留显示。
+- 新数据库默认香港时区；修改时区后需重启面板生效。
+
+### 语言
+
+- 中文（默认，强制）与 English。
+- 语言选择只认 Cookie，不跟随浏览器 `Accept-Language`。
+
+### 主题
+
+- 深色 / 浅色主题可手动切换。
+- 页面加载遮罩与动画会跟随当前主题，深色下不会出现白底闪烁。
+
+## REST API
+
+所有接口位于面板的 WebBasePath 之下，例如 `/5qYT4uHwK/xui/API/...`。鉴权方式为会话 Cookie：先 `POST /login` 登录，后续请求携带该 Cookie。
 
 - `/login`，`POST` 用户数据：`{username: '', password: ''}`
+
 - `/xui/API/inbounds`：
 
 | 方法 | 路径 | 说明 |
@@ -209,6 +300,14 @@ docker run -itd \
 | `POST` | `"/save"` | 保存路由规则 |
 | `POST` | `"/replaceBalancerTag"` | 替换路由规则中的 balancer tag |
 
+- `/xui/API/node_sync`：
+
+| 方法 | 路径 | 说明 |
+| :---: | --- | --- |
+| `GET` | `"/nodes"` | 查询面板角色、副面板列表与最近同步时间 |
+| `POST` | `"/push"` | 向全部已初始化的副面板下发一次同步 |
+| `POST` | `"/push/:id"` | 只向指定副面板下发同步 |
+
 - `/xui/API/server`：
 
 | 方法 | 路径 | 说明 |
@@ -234,8 +333,6 @@ docker run -itd \
 | `POST` | `"/installXray/:version"` | 安装并切换到指定版本 Xray |
 | `POST` | `"/logs/:count"` | 获取面板 / Xray 日志 |
 
-</details>
-
 ## 环境变量
 
 | 变量 | 类型 | 默认值 |
@@ -246,7 +343,7 @@ docker run -itd \
 | `XUI_DB_FOLDER` | `string` | `"/etc/x-ui"` |
 | `XUI_SQLITE_CACHE_SIZE` | `int64`：负数 = KiB/连接，正数 = 页数/连接 | 按内存自动 |
 
-## SQLite 调优说明
+## SQLite 调优与备份
 
 面板默认启用 WAL 与并发优化，全部在启动时施加，无需手动改库：
 
@@ -260,7 +357,7 @@ docker run -itd \
 | 连接池 | 最大 4，空闲 2，空闲 3 分钟回收 |
 | 索引 | `client_traffics.inbound_id`（自动补建） |
 
-启动日志（syslog / journald）会输出实际取值，例如：
+启动日志（journald）会输出实际取值，例如：
 
 ```text
 INFO - sqlite: cache_size= -16000  source= auto  memory_limit_mb= 3921
@@ -273,6 +370,7 @@ INFO - sqlite: cache_size= -16000  source= auto  memory_limit_mb= 3921
 - 请使用面板的“导出数据库”：导出前会执行 `wal_checkpoint(TRUNCATE)`，确保备份完整。
 - 不要直接复制正在运行的 `x-ui.db`：最新数据可能还在 `-wal` 文件中。
 - 导入会整库替换，并自动清理旧 `-wal/-shm`、执行迁移、补建索引；导入的 settings（时区、TG 语言、分页大小等）会随备份恢复，导入后按需调整。
+- SQLite 调优参数由程序在启动时施加，不存储在数据库文件中，导入其他数据库不会覆盖这些参数。
 
 ## SSL 证书
 
@@ -289,15 +387,9 @@ INFO - sqlite: cache_size= -16000  source= auto  memory_limit_mb= 3921
 - 续期成功后证书在 10 秒内热加载，不重启面板和 Xray。
 - 自动管理的证书保存在 `/root/xui-https/`。
 
-### Cloudflare（推荐）
+### Cloudflare
 
-管理脚本内置 Cloudflare 证书申请。需要：
-
-- Cloudflare 注册邮箱
-- Cloudflare Global API Key
-- 域名已通过 Cloudflare 解析到当前服务器
-
-在服务器上执行 `x-ui`，选择菜单 **19（Cloudflare SSL 证书）**，按提示输入即可。
+管理脚本内置 Cloudflare 证书申请。需要 Cloudflare 注册邮箱、Global API Key，以及已解析到当前服务器的域名。在服务器上执行 `x-ui`，选择菜单 **19（Cloudflare SSL 证书）**，按提示输入即可。
 
 ### Certbot
 
@@ -335,19 +427,12 @@ certbot certonly --standalone --register-unsafely-without-email --non-interactiv
 
 ### 功能
 
-- 定时报表
-- 登录通知
-- CPU 负载阈值通知
+- 定时报表、登录通知、CPU 负载阈值通知
 - 到期时间与流量预警
-- 按 Telegram ID 或用户名查询客户端
-- 匿名流量查询（按 UUID / 密码搜索）
-- 菜单式交互
-- 管理员按邮箱搜索客户端
-- 入站检查
-- 系统状态检查
-- 耗尽客户端检查
+- 按 Telegram ID 或用户名查询客户端、按 UUID / 密码匿名查询
+- 管理员按邮箱搜索客户端、入站检查、系统状态检查、耗尽客户端检查
 - 按需备份与定时备份
-- 多语言（本版本默认中文）
+- 菜单式交互，多语言（默认中文）
 
 </details>
 
@@ -356,9 +441,25 @@ certbot certonly --standalone --register-unsafely-without-email --non-interactiv
 <details>
   <summary>展开查看</summary>
 
+### 升级后页面样式错乱或标题没变
+
+浏览器缓存了旧脚本。使用 Ctrl+F5 强制刷新一次；面板标题修改后标签页会立即更新，但已打开的其它页面需要刷新才会带上新名称。
+
+### 同一版本看不到更新提示
+
+版本号相同不会触发面板内更新提示（例如重新发布的同版本包）。需要时在服务器执行一次 `x-ui update`，或在面板中手动安装同版本包。
+
+### 在线更新失败
+
+弹窗会显示更新器退出码。查看 `/var/log/x-ui-update.log` 定位原因，修复后重新点击更新；也可以直接 SSH 执行 `x-ui update`。
+
+### 节点同步一直提示某个状态
+
+状态胶囊只有三种：面板地址错误、用户名密码错误、面板连接超时，鼠标悬停可看到具体原因。地址错误还包括“目标面板已不是副面板，请重新执行同步初始化”；若副面板被释放或降级，需要重新初始化。修改副面板路径或账号密码不会导致需要重新初始化。
+
 ### 客户端流量统计不生效
 
-如果从旧版本或其他分支升级，客户端流量可能默认未开启。检查 Xray 模板中的 `policy` 段，确保包含：
+如果从旧版本升级，客户端流量可能默认未开启。检查 Xray 模板中的 `policy` 段，确保包含：
 
 ```json
 "policy": {
@@ -377,19 +478,12 @@ certbot certonly --standalone --register-unsafely-without-email --non-interactiv
 
 保存后重启 Xray 服务。
 
-### 导入原版数据库后时区变成 Asia/Tehran
+### 导入数据库后时区不是香港时区
 
-时区保存在 settings 表中，会随导入的库恢复。到“设置”页改为 `Asia/Hong_Kong` 即可；SQLite 调优参数不受影响。
+时区保存在 settings 表中，会随导入的库恢复。到“设置”页改为“香港时区”并重启面板即可；SQLite 调优参数不受影响。
 
 </details>
 
-## 致谢
-
-- 上游项目：[alireza0/x-ui](https://github.com/alireza0/x-ui)（GPLv3）
-- [Loyalsoldier/v2ray-rules-dat](https://github.com/Loyalsoldier/v2ray-rules-dat)（GPL-3.0）
-- [Iran v2ray rules](https://github.com/chocolate4u/Iran-v2ray-rules)（GPL-3.0）
-- [HexaSoftwareTech](https://github.com/HexaSoftwareTech/)、[MHSanaei](https://github.com/MHSanaei)
-
 ## 许可证
 
-本项目遵循 **GPLv3**。分发或修改后分发时，请保留许可证并公开对应源码。
+本项目遵循 **GPLv3**。基础框架源自 [alireza0/x-ui](https://github.com/alireza0/x-ui)（GPLv3），随包的 `geoip.dat` / `geosite.dat` 来自 Xray-core 发布。分发或修改后分发时，请保留许可证并公开对应源码。
