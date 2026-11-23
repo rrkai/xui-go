@@ -364,6 +364,7 @@ func (s *Server) Start() (err error) {
 		return certFile, keyFile
 	}, webDomain)
 	s.certManager.Start()
+	network.SetActiveCertManager(s.certManager)
 	listener = network.NewFlexTLSListener(listener, s.certManager)
 	s.listener = listener
 

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/alireza0/x-ui/web/entity"
+	"github.com/alireza0/x-ui/web/network"
 	"github.com/alireza0/x-ui/web/service"
 	"github.com/alireza0/x-ui/web/session"
 
@@ -67,6 +68,9 @@ func (a *SettingController) updateSetting(c *gin.Context) {
 		return
 	}
 	err = a.settingService.UpdateAllSetting(allSetting)
+	if err == nil {
+		network.ReloadPanelCert()
+	}
 	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
 }
 

@@ -23,6 +23,7 @@ import (
 
 	"github.com/alireza0/x-ui/config"
 	"github.com/alireza0/x-ui/logger"
+	"github.com/alireza0/x-ui/web/network"
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge/http01"
@@ -1057,6 +1058,7 @@ func (s *AutoCertService) Issue(target, provider, eabKid, eabHmac, email string)
 		updateLastError(err.Error())
 		return err
 	}
+	network.ReloadPanelCert()
 
 	state := AutoCertState{
 		Enabled:           true,

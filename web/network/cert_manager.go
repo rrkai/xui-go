@@ -63,6 +63,31 @@ func (m *CertManager) Stop() {
 	m.mu.Unlock()
 }
 
+var (
+	activeCertMu sync.RWMutex
+	activeCert   *CertManager
+)
+
+// SetActiveCertManager registers the panel's certificate manager so settings
+// changes can refresh it without waiting for the periodic reload.
+func SetActiveCertManager(m *CertManager) {
+	activeCertMu.Lock()
+	activeCert = m
+	activeCertMu.Unlock()
+}
+
+// ReloadPanelCert forces an immediate certificate reload after the panel
+// certificate settings or files change. It is a no-op before the manager is
+// registered.
+func ReloadPanelCert() {
+	activeCertMu.RLock()
+	m := activeCert
+	activeCertMu.RUnlock()
+	if m != nil {
+		go m.reload(true)
+	}
+}
+
 func (m *CertManager) reload(force bool) {
 	certPath, keyPath := m.getPaths()
 	certPath = strings.TrimSpace(certPath)

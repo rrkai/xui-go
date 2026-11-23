@@ -82,6 +82,14 @@ var defaultValueMap = map[string]string{
 	"backupLastRun":      "",
 }
 
+func init() {
+	// New databases follow the host time zone; the settings page shows this
+	// value as the "local" preset.
+	if tz := GetHostTimeZone(); tz != "" {
+		defaultValueMap["timeLocation"] = tz
+	}
+}
+
 type SettingService struct{}
 
 func (s *SettingService) GetAllSetting() (*entity.AllSetting, error) {
