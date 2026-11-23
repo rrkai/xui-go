@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"strconv"
+
 	"github.com/alireza0/x-ui/web/service"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +14,7 @@ type APIController struct {
 	outboundController    *OutboundController
 	routingRuleController *RoutingRuleController
 	serverController      *ServerController
+	syncService           service.NodeSyncService
 	Tgbot                 service.Tgbot
 }
 
@@ -31,6 +34,59 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 	a.outboundApi(api)
 	a.routingApi(api)
 	a.serverApi(api)
+	a.nodeSyncApi(api)
+}
+
+func (a *APIController) nodeSyncApi(api *gin.RouterGroup) {
+	nodeSyncApi := api.Group("/node_sync")
+
+	nodeSyncRoutes := []struct {
+		Method  string
+		Path    string
+		Handler gin.HandlerFunc
+	}{
+		{"GET", "/nodes", a.syncNodes},
+		{"POST", "/push", a.syncPushAll},
+		{"POST", "/push/:id", a.syncPushNode},
+	}
+
+	for _, route := range nodeSyncRoutes {
+		nodeSyncApi.Handle(route.Method, route.Path, route.Handler)
+	}
+}
+
+func (a *APIController) syncNodes(c *gin.Context) {
+	info, err := a.syncService.RoleInfo()
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	nodes, err := a.syncService.ListNodes()
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	jsonObj(c, gin.H{
+		"role":       info.Role,
+		"masterName": info.MasterName,
+		"version":    info.Version,
+		"nodes":      nodes,
+	}, nil)
+}
+
+func (a *APIController) syncPushAll(c *gin.Context) {
+	result, err := a.syncService.PushNodes(0)
+	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.pushDone"), result, err)
+}
+
+func (a *APIController) syncPushNode(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.pushDone"), err)
+		return
+	}
+	result, err := a.syncService.PushNodes(id)
+	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.pushDone"), result, err)
 }
 
 func (a *APIController) inboundApi(api *gin.RouterGroup) {

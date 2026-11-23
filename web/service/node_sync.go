@@ -113,6 +113,22 @@ type SyncMergeResult struct {
 	Warnings  []string `json:"warnings"`
 }
 
+type SyncPushNodeResult struct {
+	Id       int              `json:"id"`
+	Remark   string           `json:"remark"`
+	Success  bool             `json:"success"`
+	Message  string           `json:"message,omitempty"`
+	LastSync int64            `json:"lastSync"`
+	Applied  *SyncApplyResult `json:"applied,omitempty"`
+}
+
+type SyncPushBatchResult struct {
+	Total     int                   `json:"total"`
+	Succeeded int                   `json:"succeeded"`
+	Failed    int                   `json:"failed"`
+	Items     []*SyncPushNodeResult `json:"items"`
+}
+
 type NodeSyncService struct {
 	settingService     SettingService
 	inboundService     InboundService
@@ -468,6 +484,68 @@ func (s *NodeSyncService) PushNode(id int) (*SyncApplyResult, error) {
 	autoSyncAttemptAt[node.Id] = node.LastSync
 	autoSyncAttemptMu.Unlock()
 	return result, nil
+}
+
+// PushNodes pushes the local dataset to one slave (id > 0) or to every ready
+// slave. Per-node failures stay in the result so a partially successful batch
+// still reports which panels need attention.
+func (s *NodeSyncService) PushNodes(id int) (*SyncPushBatchResult, error) {
+	if slave, err := s.IsSlave(); err != nil {
+		return nil, err
+	} else if slave {
+		return nil, common.NewError("本面板是副面板，不能下发同步")
+	}
+	nodes := make([]*model.SyncNode, 0, 8)
+	if id > 0 {
+		node, err := s.loadNode(id)
+		if err != nil {
+			return nil, err
+		}
+		if !node.Ready {
+			return nil, common.NewError("请先完成同步初始化")
+		}
+		nodes = append(nodes, node)
+	} else if err := database.GetDB().Order("id asc").Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+	result := &SyncPushBatchResult{Items: make([]*SyncPushNodeResult, 0, len(nodes))}
+	for _, node := range nodes {
+		if !node.Ready {
+			continue
+		}
+		item := &SyncPushNodeResult{Id: node.Id, Remark: node.Remark}
+		applied, err := s.pushNodeWithWait(node.Id)
+		if err != nil {
+			item.Message = err.Error()
+			result.Failed++
+		} else {
+			item.Success = true
+			item.Applied = applied
+			result.Succeeded++
+		}
+		if fresh, err := s.loadNode(node.Id); err == nil {
+			item.LastSync = fresh.LastSync
+		}
+		result.Total++
+		result.Items = append(result.Items, item)
+	}
+	if result.Total == 0 {
+		return nil, common.NewError("没有已就绪的副面板")
+	}
+	if result.Succeeded == 0 {
+		return result, common.NewError("同步下发失败: " + result.Items[0].Message)
+	}
+	return result, nil
+}
+
+func (s *NodeSyncService) pushNodeWithWait(id int) (*SyncApplyResult, error) {
+	for attempt := 0; ; attempt++ {
+		applied, err := s.PushNode(id)
+		if err == nil || attempt >= 20 || !strings.Contains(err.Error(), "正在同步中") {
+			return applied, err
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func (s *NodeSyncService) MergeNode(id int, userId int) (*SyncMergeResult, error) {
