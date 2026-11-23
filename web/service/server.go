@@ -1108,8 +1108,10 @@ func (s *ServerService) StartPanelUpdate() error {
 	if runtime.GOOS != "linux" {
 		return common.NewError("panel update is only supported on Linux")
 	}
-	if exe, err := os.Executable(); err != nil || filepath.Clean(exe) != "/usr/local/x-ui/x-ui" {
-		return common.NewError("panel update is only available for the standard /usr/local/x-ui installation")
+	if exe, err := os.Executable(); err != nil {
+		return common.NewError("面板内更新仅支持 /usr/local/x-ui 标准安装；请换用标准安装的面板，或通过 SSH 执行 x-ui update")
+	} else if filepath.Clean(exe) != "/usr/local/x-ui/x-ui" {
+		return common.NewErrorf("面板内更新仅支持 /usr/local/x-ui 标准安装（当前运行于 %s）；请换用标准安装的面板，或通过 SSH 执行 x-ui update", filepath.Clean(exe))
 	}
 	if _, err := exec.LookPath("systemd-run"); err != nil {
 		return common.NewError("panel update requires systemd; run 'x-ui update' over SSH instead")
