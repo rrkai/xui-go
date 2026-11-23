@@ -34,6 +34,7 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	g.GET("/node_sync", a.nodeSync)
 	g.GET("/settings", a.settings)
 	g.GET("/xray", a.xraySettings)
+	g.GET("/user_cert", a.userCert)
 
 	a.inboundController = NewInboundController(g)
 	a.outboundController = NewOutboundController(g)
@@ -69,4 +70,8 @@ func (a *XUIController) settings(c *gin.Context) {
 
 func (a *XUIController) xraySettings(c *gin.Context) {
 	html(c, "xray.html", "pages.xray.title", nil)
+}
+
+func (a *XUIController) userCert(c *gin.Context) {
+	html(c, "user_cert.html", "pages.userCert.title", nil)
 }

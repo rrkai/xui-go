@@ -807,6 +807,70 @@ func (s *NodeSyncService) ReceiveApply(data *SyncDataSet) (*SyncApplyResult, err
 	if err := db.Order("id asc").First(&user).Error; err != nil {
 		return nil, err
 	}
+	return s.applyDataSet(data, user.Id)
+}
+
+// OverwriteFromNode pulls the inbound, outbound and routing lists from a ready
+// slave panel and replaces the local (master) copies with them. Traffic
+// counters of matching client emails are kept; runtime changes go through the
+// Xray API first and fall back to a restart when hot loading fails.
+func (s *NodeSyncService) OverwriteFromNode(id, userId int) (*SyncApplyResult, error) {
+	if slave, err := s.IsSlave(); err != nil {
+		return nil, err
+	} else if slave {
+		return nil, common.NewError("本面板是副面板，不能从其他面板覆盖主库")
+	}
+	if !syncOperationMu.TryLock() {
+		return nil, common.NewError("正在同步中，请稍后再试")
+	}
+	defer syncOperationMu.Unlock()
+	node, err := s.loadNode(id)
+	if err != nil {
+		return nil, err
+	}
+	if !node.Ready {
+		return nil, common.NewError("请先完成同步初始化")
+	}
+	password, err := decryptSyncPassword(node.Password)
+	if err != nil {
+		return nil, common.NewError("节点密码解密失败，请重新编辑节点信息")
+	}
+	client, err := newPanelClient(node.Address, syncInitTimeout)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.login(node.Username, password); err != nil {
+		return nil, err
+	}
+	info, err := client.info()
+	if err != nil {
+		return nil, err
+	}
+	if info.Role != SyncRoleSlave {
+		return nil, common.NewError("目标面板不是副面板，请先执行同步初始化")
+	}
+	remote := &SyncDataSet{}
+	if err := client.getJSON("/xui/node_sync/export", remote); err != nil {
+		return nil, err
+	}
+	if userId <= 0 {
+		var user model.User
+		if err := database.GetDB().Order("id asc").First(&user).Error; err != nil {
+			return nil, err
+		}
+		userId = user.Id
+	}
+	result, err := s.applyDataSet(remote, userId)
+	if err != nil {
+		return nil, err
+	}
+	node.LastSync = time.Now().Unix()
+	database.GetDB().Save(node)
+	return result, nil
+}
+
+func (s *NodeSyncService) applyDataSet(data *SyncDataSet, userId int) (*SyncApplyResult, error) {
+	db := database.GetDB()
 
 	oldInbounds, err := s.inboundService.GetAllInbounds()
 	if err != nil {
@@ -828,6 +892,10 @@ func (s *NodeSyncService) ReceiveApply(data *SyncDataSet) (*SyncApplyResult, err
 			oldOutboundByTag[outbound.Tag] = outbound
 		}
 	}
+	oldRules, err := s.routingRuleService.GetAllRules()
+	if err != nil {
+		return nil, err
+	}
 
 	oldTraffic := make([]*xray.ClientTraffic, 0, 256)
 	if err := db.Find(&oldTraffic).Error; err != nil {
@@ -845,7 +913,7 @@ func (s *NodeSyncService) ReceiveApply(data *SyncDataSet) (*SyncApplyResult, err
 		}
 		cloned := *inbound
 		cloned.Id = 0
-		cloned.UserId = user.Id
+		cloned.UserId = userId
 		cloned.ClientStats = nil
 		if cloned.Tag == "" {
 			if cloned.Listen == "" || cloned.Listen == "0.0.0.0" || cloned.Listen == "::" || cloned.Listen == "::0" {
@@ -940,9 +1008,7 @@ func (s *NodeSyncService) ReceiveApply(data *SyncDataSet) (*SyncApplyResult, err
 	}
 
 	needRestart := false
-	restart, err := s.routingRuleService.SaveAllRules(rules)
-	needRestart = needRestart || restart
-	if err != nil {
+	if err := s.routingRuleService.ReplaceRulesToDB(rules); err != nil {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("路由规则同步失败: %v", err))
 		needRestart = true
 	} else {
@@ -1023,6 +1089,31 @@ func (s *NodeSyncService) ReceiveApply(data *SyncDataSet) (*SyncApplyResult, err
 				logger.Debug("node sync: add inbound by api failed:", err)
 				needRestart = true
 				result.Warnings = append(result.Warnings, fmt.Sprintf("入站 %s 热加载失败: %v", inbound.Tag, err))
+			}
+		}
+		for _, rule := range oldRules {
+			tag := rule.Tag
+			if tag == "" {
+				tag = fmt.Sprintf("rule-%d", rule.Id)
+			}
+			if err := api.DelRule(tag); err != nil {
+				logger.Debug("node sync: delete routing rule by api failed:", err)
+				if !strings.Contains(strings.ToLower(err.Error()), "not found") {
+					needRestart = true
+				}
+			}
+		}
+		for _, rule := range rules {
+			payload, err := rule.RuleJSON()
+			if err != nil {
+				needRestart = true
+				result.Warnings = append(result.Warnings, fmt.Sprintf("路由规则 %s 序列化失败: %v", rule.Tag, err))
+				continue
+			}
+			if err := api.AddRule(payload, true); err != nil {
+				logger.Debug("node sync: add routing rule by api failed:", err)
+				needRestart = true
+				result.Warnings = append(result.Warnings, fmt.Sprintf("路由规则 %s 热加载失败: %v", rule.Tag, err))
 			}
 		}
 		api.Close()

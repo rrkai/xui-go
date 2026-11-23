@@ -71,6 +71,7 @@
 "nodeSync" = "节点同步"
 "settings" = "面板设置"
 "xray" = "内核设置"
+"userCert" = "用户证书"
 "logout" = "退出登录"
 "link" = "管理"
 
@@ -275,6 +276,9 @@
 [pages.routingRules.toasts]
 "obtain" = "加载路由规则失败"
 
+[pages.userCert]
+"title" = "用户证书"
+
 [pages.nodeSync]
 "title" = "节点同步"
 "desc" = "添加其他 XUI-GO 面板作为副面板，集中同步入站、出站和路由列表"
@@ -285,6 +289,7 @@
 "syncInit" = "同步初始化"
 "pushSync" = "下发同步"
 "mergeData" = "数据合并"
+"overwriteMaster" = "覆盖主库"
 "editNode" = "编辑信息"
 "deleteNode" = "删除面板"
 "remark" = "备注"
@@ -312,6 +317,8 @@
 "initConfirm" = "将用主面板数据库覆盖副面板的设置与全部列表，确定继续吗？"
 "pushConfirm" = "是否进行主数据同步到副面板"
 "mergeConfirm" = "是否把副面板的数据合并到主面板"
+"overwriteConfirm" = "将用副面板的入站、出站和路由列表覆盖主面板数据，确定继续吗？"
+"overwriteSummary" = "覆盖完成：入站 {inbounds}，出站 {outbounds}，路由 {rules}"
 "deleteConfirm" = "确定删除该面板并解除其副属性吗？"
 "mergeSummary" = "合并完成：入站 {inbounds}，出站 {outbounds}，路由 {rules}，跳过 {skipped}"
 "uninitAlert" = "该面板尚未初始化，请先执行同步初始化。"
@@ -338,6 +345,7 @@
 "initDone" = "同步初始化"
 "pushDone" = "下发同步"
 "mergeDone" = "数据合并"
+"overwriteDone" = "覆盖主库"
 "released" = "解除副面板属性"
 "autoSync" = "自动同步"
 
@@ -627,7 +635,7 @@ telegramBotLanguage = "Telegram 机器人语言"
 "restartPanelDesc" = "是否重启面板？点击确定将于 3 秒后重启，若重启后无法访问面板，请前往服务器查看面板日志信息"
 "resetDefaultConfig" = "重置为默认配置"
 "panelConfig" = "面板配置"
-"panelSecurity" = "面板安全"
+"panelSecurity" = "面板安全证书"
 "autoBackupTab" = "自动备份"
 "autoBackupEnable" = "开启自动备份"
 "autoBackupEnableDesc" = "按设定时间自动备份数据库"
@@ -659,7 +667,7 @@ telegramBotLanguage = "Telegram 机器人语言"
 "autoBackupFtpPass" = "FTP 密码"
 "autoBackupFtpDir" = "FTP 目录"
 "autoBackupFtpDirDesc" = "默认 /"
-"userSettings" = "用户设置"
+"userSettings" = "用户密码修改"
 "TGBotSettings" = "TG 提醒相关设置"
 "panelListeningIP" = "面板监听 IP"
 "panelListeningIPDesc" = "默认留空监听所有 IP"

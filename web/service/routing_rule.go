@@ -58,32 +58,8 @@ func (s *RoutingRuleService) GetRoutingMeta() (map[string]interface{}, error) {
 // Rules are first pushed to the running xray-core via API; only if xray accepts
 // them are they persisted to the database. The slice order defines the priority.
 func (s *RoutingRuleService) SaveAllRules(rules []*model.RoutingRule) (bool, error) {
-	used := make(map[string]bool)
-	for _, r := range rules {
-		if r.Tag == "" {
-			continue
-		}
-		if used[r.Tag] {
-			return false, common.NewError("Tag already exists:", r.Tag)
-		}
-		used[r.Tag] = true
-	}
-
-	counter := 1
-	for i, r := range rules {
-		r.Id = 0
-		r.Sort = i
-		if r.Tag == "" {
-			for {
-				candidate := fmt.Sprintf("rule-%d", counter)
-				counter++
-				if !used[candidate] {
-					r.Tag = candidate
-					used[candidate] = true
-					break
-				}
-			}
-		}
+	if err := normalizeRules(rules); err != nil {
+		return false, err
 	}
 
 	// Validate every rule can be serialized before touching xray or the database.
@@ -214,6 +190,62 @@ func routingRuleTag(rule *model.RoutingRule) string {
 		return rule.Tag
 	}
 	return fmt.Sprintf("rule-%d", rule.Id)
+}
+
+func normalizeRules(rules []*model.RoutingRule) error {
+	used := make(map[string]bool)
+	for _, r := range rules {
+		if r.Tag == "" {
+			continue
+		}
+		if used[r.Tag] {
+			return common.NewError("Tag already exists:", r.Tag)
+		}
+		used[r.Tag] = true
+	}
+
+	counter := 1
+	for i, r := range rules {
+		r.Id = 0
+		r.Sort = i
+		if r.Tag == "" {
+			for {
+				candidate := fmt.Sprintf("rule-%d", counter)
+				counter++
+				if !used[candidate] {
+					r.Tag = candidate
+					used[candidate] = true
+					break
+				}
+			}
+		}
+	}
+	for _, r := range rules {
+		if _, err := r.RuleJSON(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReplaceRulesToDB stores the rules without touching the running Xray
+// instance. Node sync uses it so a failed live update cannot leave the
+// database behind; the caller falls back to a restart in that case.
+func (s *RoutingRuleService) ReplaceRulesToDB(rules []*model.RoutingRule) error {
+	if err := normalizeRules(rules); err != nil {
+		return err
+	}
+	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("1 = 1").Delete(&model.RoutingRule{}).Error; err != nil {
+			return err
+		}
+		for _, r := range rules {
+			if err := tx.Create(r).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *RoutingRuleService) applyMergedRulesViaApi(rules []interface{}) (bool, error) {

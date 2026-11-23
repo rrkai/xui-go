@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<style>
+    @media (min-width: 769px) {
+        .ant-layout-content {
+            margin: 24px 16px;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .ant-tabs-nav .ant-tabs-tab {
+            margin: 0;
+            padding: 12px .5rem;
+        }
+    }
+
+    .ant-tabs-bar {
+        font-weight: bold;
+        margin: 0;
+    }
+
+    .ant-list-item {
+        display: block;
+    }
+
+    .auto-cert-meta {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--cb-text);
+        opacity: .62;
+    }
+    .auto-cert-warn {
+        color: var(--cb-orange);
+        opacity: 1;
+    }
+    .auto-cert-error {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--cb-red);
+        opacity: 1;
+        word-break: break-all;
+    }
+    .auto-cert-success {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--cb-green);
+        opacity: 1;
+    }
+</style>
+
+<body>
+
+    <a-layout id="app" v-cloak :class="themeSwitcher.currentTheme">
+        {{ template "commonSider" . }}
+        <a-layout id="content-layout">
+            <a-layout-content>
+                <a-spin :spinning="spinning" :delay="500" tip='{{ i18n "loading"}}'>
+                    <a-space direction="vertical">
+                        <a-card hoverable style="margin-bottom: .5rem;">
+                            <a-row>
+                                <a-col :xs="24" :sm="8" style="padding: 4px;">
+                                    <a-space direction="horizontal">
+                                        <a-button type="primary" :disabled="saveBtnDisable" @click="updateAllSetting">{{
+                                            i18n "pages.settings.save" }}</a-button>
+                                        <a-button type="danger" :disabled="!saveBtnDisable" @click="restartPanel">{{
+                                            i18n "pages.settings.restartPanel" }}</a-button>
+                                    </a-space>
+                                </a-col>
+                                <a-col :xs="24" :sm="16">
+                                    <template>
+                                        <div>
+                                            <a-back-top :target="() => document.getElementById('content-layout')"
+                                                visibility-height="200">
+                                            </a-back-top>
+                                            <a-alert type="warning" style="float: right; width: fit-content"
+                                                message='{{ i18n "pages.settings.infoDesc" }}' show-icon>
+                                        </div>
+                                    </template>
+                                </a-col>
+                            </a-row>
+                        </a-card>
+                        <a-tabs :active-key="activeTab" @change="key => activeTab = key">
+                            <a-tab-pane key="security" tab='{{ i18n "pages.settings.panelSecurity"}}'>
+                                <a-list item-layout="horizontal">
+                                    <a-list-item style="padding: 20px">
+                                        <a-row>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-list-item-meta title='{{ i18n "pages.settings.autoCertTitle"}}'
+                                                    description='{{ i18n "pages.settings.autoCertDesc"}}'/>
+                                            </a-col>
+                                            <a-col :lg="24" :xl="12">
+                                                <div v-if="certStatus">
+                                                    <a-tag v-if="certStatus.givenUp" color="red">{{ i18n "pages.settings.autoCertGivenUp"}}</a-tag>
+                                                    <a-tag v-else :color="certStatusTagColor">[[ certStatusLabel ]]</a-tag>
+                                                    <div class="auto-cert-meta" v-if="certStatus.present">
+                                                        [[ certStatus.subject ]] · {{ i18n "pages.settings.autoCertExpires"}} [[ certNotAfter ]]
+                                                        <span v-if="certStatus.valid">([[ certStatus.daysLeft ]] {{ i18n "pages.settings.autoCertDays"}})</span>
+                                                    </div>
+                                                    <div class="auto-cert-meta" v-if="certStatus.autoRenew">{{ i18n "pages.settings.autoCertRenewOn"}}</div>
+                                                    <div class="auto-cert-meta auto-cert-warn" v-else-if="certStatus.enabled && !certStatus.givenUp">{{ i18n "pages.settings.autoCertRenewPaused"}}</div>
+                                                    <div class="auto-cert-meta" v-if="certStatus.autoRenew && certRenewAt">{{ i18n "pages.settings.autoCertPlanRenew"}} [[ certRenewAt ]]</div>
+                                                    <div class="auto-cert-meta auto-cert-warn" v-if="certStatus.autoRenew && certNextAttempt">{{ i18n "pages.settings.autoCertNextAttempt"}} [[ certNextAttempt ]]</div>
+                                                    <div class="auto-cert-error" v-if="certStatus.enabled && certStatus.lastError">[[ certStatus.lastError ]]</div>
+                                                </div>
+                                                <div class="auto-cert-meta" v-else>{{ i18n "pages.settings.autoCertLoading"}}</div>
+                                            </a-col>
+                                        </a-row>
+                                    </a-list-item>
+                                    <a-list-item style="padding: 20px">
+                                        <a-row>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-list-item-meta title='{{ i18n "pages.settings.autoCertTarget"}}'
+                                                    description='{{ i18n "pages.settings.autoCertTargetDesc"}}'/>
+                                            </a-col>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-input v-model="certForm.target" @blur="checkCertPort(false)"
+                                                    placeholder='{{ i18n "pages.settings.autoCertTargetPlaceholder"}}'></a-input>
+                                                <div class="auto-cert-meta" v-if="certPortChecking">{{ i18n "pages.settings.autoCertPortChecking"}}</div>
+                                                <div v-else-if="certPortStatus" :class="certPortHintClass">
+                                                    [[ certPortStatus.message ]]
+                                                    <a href="#" @click.prevent="checkCertPort(true)">{{ i18n "pages.settings.autoCertPortRecheck"}}</a>
+                                                </div>
+                                            </a-col>
+                                        </a-row>
+                                    </a-list-item>
+                                    <a-list-item style="padding: 20px">
+                                        <a-row>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-list-item-meta title='{{ i18n "pages.settings.autoCertProvider"}}'
+                                                    description='{{ i18n "pages.settings.autoCertProviderDesc"}}'/>
+                                            </a-col>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-select v-model="certForm.provider" style="width: 100%;">
+                                                    <a-select-option value="letsencrypt">Let's Encrypt</a-select-option>
+                                                    <a-select-option value="zerossl" :disabled="certTargetIsIP">ZeroSSL</a-select-option>
+                                                </a-select>
+                                                <div class="auto-cert-meta" v-if="certTargetIsIP">{{ i18n "pages.settings.autoCertIPOnly"}}</div>
+                                            </a-col>
+                                        </a-row>
+                                    </a-list-item>
+                                    <a-list-item style="padding: 20px">
+                                        <a-row>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-list-item-meta title='{{ i18n "pages.settings.autoCertReleaseTitle"}}'
+                                                    description='{{ i18n "pages.settings.autoCertReleaseDesc"}}'/>
+                                            </a-col>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-switch v-model="certForm.releasePort80" :loading="certOptionsSaving"
+                                                    :disabled="!certForm.releasePort80 && (!certPortStatus || !certPortStatus.canStop)"
+                                                    @change="updateCertOptions"></a-switch>
+                                                <div class="auto-cert-meta" v-if="certPortStatus && certPortStatus.blocked && certPortStatus.occupantName">
+                                                    {{ i18n "pages.settings.autoCertOccupiedBy"}}：[[ certPortOccupant ]]
+                                                    <span v-if="!certPortStatus.canStop" class="auto-cert-warn">（[[ certPortStatus.stopReason ]]）</span>
+                                                </div>
+                                                <div class="auto-cert-meta auto-cert-warn" v-if="certUnitMismatch">[[ certUnitMismatchText ]]</div>
+                                            </a-col>
+                                        </a-row>
+                                    </a-list-item>
+                                    <template v-if="certForm.provider === 'zerossl'">
+                                        <a-list-item style="padding: 20px">
+                                            <a-row>
+                                                <a-col :lg="24" :xl="12">
+                                                    <a-list-item-meta title='{{ i18n "pages.settings.autoCertEabKid"}}'
+                                                        description='{{ i18n "pages.settings.autoCertEabKidDesc"}}'/>
+                                                </a-col>
+                                                <a-col :lg="24" :xl="12">
+                                                    <a-input v-model="certForm.eabKid" placeholder="EAB Key ID"></a-input>
+                                                </a-col>
+                                            </a-row>
+                                        </a-list-item>
+                                        <a-list-item style="padding: 20px">
+                                            <a-row>
+                                                <a-col :lg="24" :xl="12">
+                                                    <a-list-item-meta title='{{ i18n "pages.settings.autoCertEabHmac"}}'
+                                                        description='{{ i18n "pages.settings.autoCertEabHmacDesc"}}'/>
+                                                </a-col>
+                                                <a-col :lg="24" :xl="12">
+                                                    <a-input v-model="certForm.eabHmac" type="password" placeholder="EAB HMAC Key"></a-input>
+                                                </a-col>
+                                            </a-row>
+                                        </a-list-item>
+                                    </template>
+                                    <a-list-item style="padding: 20px">
+                                        <a-row>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-list-item-meta title='{{ i18n "pages.settings.autoCertAction"}}'
+                                                    description='{{ i18n "pages.settings.autoCertActionDesc"}}'/>
+                                            </a-col>
+                                            <a-col :lg="24" :xl="12">
+                                                <a-button type="primary" :loading="certIssuing"
+                                                    :disabled="certIssueDisabled" @click="issueCert">
+                                                    {{ i18n "pages.settings.autoCertIssue"}}
+                                                </a-button>
+                                                <div v-if="certMessage" :class="certMessageError ? 'auto-cert-error' : 'auto-cert-success'">[[ certMessage ]]</div>
+                                            </a-col>
+                                        </a-row>
+                                    </a-list-item>
+                                    <setting-list-item type="number" title='{{ i18n "pages.settings.panelPort"}}'
+                                        desc='{{ i18n "pages.settings.panelPortDesc"}}'
+                                        v-model.number="allSetting.webPort"></setting-list-item>
+                                    <setting-list-item type="text" title='{{ i18n "pages.settings.publicKeyPath"}}'
+                                        desc='{{ i18n "pages.settings.publicKeyPathDesc"}}'
+                                        v-model="allSetting.webCertFile"></setting-list-item>
+                                    <setting-list-item type="text" title='{{ i18n "pages.settings.privateKeyPath"}}'
+                                        desc='{{ i18n "pages.settings.privateKeyPathDesc"}}'
+                                        v-model="allSetting.webKeyFile"></setting-list-item>
+                                    <setting-list-item type="text" title='{{ i18n "pages.settings.panelUrlPath"}}'
+                                        desc='{{ i18n "pages.settings.panelUrlPathDesc"}}'
+                                        v-model="allSetting.webBasePath"></setting-list-item>
+                                </a-list>
+                            </a-tab-pane>
+                            <a-tab-pane key="user" tab='{{ i18n "pages.settings.userSettings"}}'>
+                                <a-form layout="horizontal" :colon="false" style="float: left; margin: 10px 0;"
+                                    :label-col="{ md: {span:10} }" :wrapper-col="{ md: {span:14} }">
+                                    <a-form-item label='{{ i18n "pages.settings.oldUsername"}}'>
+                                        <a-input v-model="user.oldUsername"></a-input>
+                                    </a-form-item>
+                                    <a-form-item label='{{ i18n "pages.settings.currentPassword"}}'>
+                                        <password-input v-model="user.oldPassword"></password-input>
+                                    </a-form-item>
+                                    <a-form-item label='{{ i18n "pages.settings.newUsername"}}'>
+                                        <a-input v-model="user.newUsername"></a-input>
+                                    </a-form-item>
+                                    <a-form-item label='{{ i18n "pages.settings.newPassword"}}'>
+                                        <password-input v-model="user.newPassword"></password-input>
+                                    </a-form-item>
+                                    <a-form-item label=" ">
+                                        <a-button type="primary" @click="updateUser">{{ i18n "confirm" }}</a-button>
+                                    </a-form-item>
+                                </a-form>
+                            </a-tab-pane>
+                        </a-tabs>
+                    </a-space>
+                </a-spin>
+            </a-layout-content>
+        </a-layout>
+    </a-layout>
+
+    {{template "js" .}}
+    <script src="{{ .base_path }}assets/js/model/setting.js?{{ .cur_ver }}"></script>
+    {{template "component/themeSwitcher" .}}
+    {{template "component/password" .}}
+    {{template "component/setting"}}
+
+    <script>
+        const app = new Vue({
+            delimiters: ['[[', ']]'],
+            el: '#app',
+            data: {
+                siderDrawer,
+                themeSwitcher,
+                spinning: false,
+                activeTab: (() => {
+                    const tab = new URLSearchParams(window.location.search).get('tab');
+                    return ['security', 'user'].includes(tab) ? tab : 'security';
+                })(),
+                oldAllSetting: new AllSetting(),
+                allSetting: new AllSetting(),
+                saveBtnDisable: true,
+                certStatus: null,
+                certIssuing: false,
+                certMessage: '',
+                certMessageError: false,
+                certPortStatus: null,
+                certPortChecking: false,
+                certOptionsSaving: false,
+                certForm: {
+                    target: '',
+                    provider: 'letsencrypt',
+                    eabKid: '',
+                    eabHmac: '',
+                    email: '',
+                    releasePort80: true,
+                },
+                user: {},
+            },
+            methods: {
+                loading(spinning = true) {
+                    this.spinning = spinning;
+                },
+                async getAllSetting() {
+                    this.loading(true);
+                    const msg = await HttpUtil.post("/xui/setting/all");
+                    this.loading(false);
+                    if (msg.success) {
+                        this.oldAllSetting = new AllSetting(msg.obj);
+                        this.allSetting = new AllSetting(msg.obj);
+                        this.saveBtnDisable = true;
+                    }
+                },
+                async updateAllSetting() {
+                    this.loading(true);
+                    const msg = await HttpUtil.post("/xui/setting/update", this.allSetting);
+                    this.loading(false);
+                    if (msg.success) {
+                        await this.getAllSetting();
+                    }
+                },
+                async loadCertStatus(init = false) {
+                    const msg = await HttpUtil.get("/server/certStatus");
+                    if (!msg.success || !msg.obj) {
+                        return;
+                    }
+                    this.certStatus = msg.obj;
+                    if (init) {
+                        if (!this.certForm.target && msg.obj.target) this.certForm.target = msg.obj.target;
+                        if (msg.obj.provider) this.certForm.provider = msg.obj.provider;
+                        this.certForm.releasePort80 = !!msg.obj.releasePort80;
+                        this.prefillCertTargetForPanelHost();
+                    }
+                },
+                prefillCertTargetForPanelHost() {
+                    const host = (window.location.hostname || '').trim();
+                    if (!this.isPanelDomain(host)) return;
+                    if (this.certStatus && this.certStatus.present && this.certStatus.valid &&
+                        this.certCoversHost(this.certStatus, host)) return;
+                    this.certForm.target = host;
+                },
+                isPanelDomain(host) {
+                    if (!host || host.toLowerCase() === 'localhost') return false;
+                    if (host.includes(':')) return false;
+                    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false;
+                    return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(host);
+                },
+                certCoversHost(status, host) {
+                    const name = host.toLowerCase();
+                    const matches = value => {
+                        const certName = (value || '').trim().toLowerCase();
+                        if (!certName) return false;
+                        if (certName === name) return true;
+                        if (!certName.startsWith('*.')) return false;
+                        const suffix = certName.slice(1);
+                        return name.endsWith(suffix) && name.slice(0, -suffix.length).indexOf('.') === -1;
+                    };
+                    const names = Array.isArray(status.names) ? status.names : [];
+                    return matches(status.subject) || matches(status.target) || names.some(matches);
+                },
+                async checkCertPort(force = false) {
+                    if (this.certPortChecking) return;
+                    this.certPortChecking = true;
+                    const target = (this.certForm.target || '').trim();
+                    let url = "/server/certPortCheck?target=" + encodeURIComponent(target);
+                    if (force) url += "&force=1";
+                    const msg = await HttpUtil.get(url);
+                    this.certPortChecking = false;
+                    if (msg.success && msg.obj) {
+                        this.certPortStatus = msg.obj;
+                    }
+                },
+                async updateCertOptions(enabled) {
+                    this.certOptionsSaving = true;
+                    const msg = await HttpUtil.post("/server/certOptions", {
+                        releasePort80: enabled,
+                        unit: enabled ? this.certPortOccupant : "",
+                    });
+                    this.certOptionsSaving = false;
+                    if (!msg.success) {
+                        this.certForm.releasePort80 = !enabled;
+                    } else {
+                        await this.loadCertStatus();
+                    }
+                },
+                async issueCert() {
+                    if (this.certIssuing) return;
+                    if (this.certPortBlocked && this.certForm.releasePort80 && this.certPortStatus && this.certPortStatus.canStop) {
+                        const service = this.certPortOccupant;
+                        const confirmed = await new Promise(resolve => {
+                            this.$confirm({
+                                title: '{{ i18n "pages.settings.autoCertReleaseConfirmTitle" }}',
+                                content: '{{ i18n "pages.settings.autoCertReleaseConfirmDesc" }}'.replace('{service}', service),
+                                class: themeSwitcher.currentTheme,
+                                okText: '{{ i18n "confirm" }}',
+                                cancelText: '{{ i18n "cancel" }}',
+                                onOk: () => resolve(true),
+                                onCancel: () => resolve(false),
+                            });
+                        });
+                        if (!confirmed) return;
+                    }
+                    this.certIssuing = true;
+                    this.certMessage = '';
+                    this.certMessageError = false;
+                    const msg = await HttpUtil.post("/server/certIssue", this.certForm);
+                    this.certIssuing = false;
+                    if (msg.success) {
+                        this.certMessage = '{{ i18n "pages.settings.autoCertIssueOk" }}';
+                        await this.loadCertStatus();
+                        await this.checkCertPort(true);
+                        await this.getAllSetting();
+                    } else {
+                        this.certMessageError = true;
+                        this.certMessage = msg.msg;
+                        await this.checkCertPort(true);
+                        await this.loadCertStatus();
+                    }
+                },
+                async updateUser() {
+                    this.loading(true);
+                    const msg = await HttpUtil.post("/xui/setting/updateUser", this.user);
+                    this.loading(false);
+                    if (msg.success) {
+                        this.user = {};
+                        window.location.replace(basePath + "logout");
+                    }
+                },
+                async restartPanel() {
+                    await new Promise(resolve => {
+                        this.$confirm({
+                            title: '{{ i18n "pages.settings.restartPanel" }}',
+                            content: '{{ i18n "pages.settings.restartPanelDesc" }}',
+                            class: themeSwitcher.currentTheme,
+                            okText: '{{ i18n "confirm" }}',
+                            cancelText: '{{ i18n "cancel" }}',
+                            onOk: () => resolve(),
+                        });
+                    });
+                    this.loading(true);
+                    const msg = await HttpUtil.post("/xui/setting/restartPanel");
+                    this.loading(false);
+                    if (msg.success) {
+                        this.loading(true);
+                        await PromiseUtil.sleep(5000);
+                        var { webCertFile, webKeyFile, webDomain: host, webPort: port, webBasePath: base } = this.allSetting;
+                        if (host == this.oldAllSetting.webDomain) host = null;
+                        if (port == this.oldAllSetting.webPort) port = null;
+                        const isTLS = webCertFile !== "" || webKeyFile !== "";
+                        const url = buildURL({ host, port, isTLS, base, path: "xui/user_cert" });
+                        window.location.replace(url);
+                    }
+                },
+            },
+            computed: {
+                certTargetIsIP() {
+                    const target = (this.certForm.target || '').trim();
+                    return target === '' || /^\d{1,3}(\.\d{1,3}){3}$/.test(target);
+                },
+                certStatusLabel() {
+                    if (!this.certStatus || !this.certStatus.present) {
+                        return '{{ i18n "pages.settings.autoCertNoCert" }}';
+                    }
+                    return this.certStatus.valid
+                        ? '{{ i18n "pages.settings.autoCertValid" }}'
+                        : '{{ i18n "pages.settings.autoCertInvalid" }}';
+                },
+                certStatusTagColor() {
+                    if (!this.certStatus || !this.certStatus.present) return '';
+                    return this.certStatus.valid ? 'green' : 'red';
+                },
+                certNotAfter() {
+                    if (!this.certStatus || !this.certStatus.notAfter) return '';
+                    const date = new Date(this.certStatus.notAfter);
+                    // Go zero time serializes as year 1; treat it as unset.
+                    return isNaN(date.getTime()) || date.getFullYear() <= 1 ? '' : date.toLocaleString();
+                },
+                certRenewAt() {
+                    if (!this.certStatus || !this.certStatus.renewAt) return '';
+                    const date = new Date(this.certStatus.renewAt);
+                    return isNaN(date.getTime()) || date.getFullYear() <= 1 || date.getTime() <= Date.now() ? '' : date.toLocaleString();
+                },
+                certNextAttempt() {
+                    if (!this.certStatus || !this.certStatus.nextAttemptAt) return '';
+                    const date = new Date(this.certStatus.nextAttemptAt);
+                    return isNaN(date.getTime()) || date.getFullYear() <= 1 || date.getTime() <= Date.now() ? '' : date.toLocaleString();
+                },
+                certPortBlocked() {
+                    return !!(this.certPortStatus && this.certPortStatus.blocked);
+                },
+                certPortOccupant() {
+                    if (!this.certPortStatus) return '';
+                    return this.certPortStatus.occupantUnit || this.certPortStatus.occupantName || '';
+                },
+                certUnitMismatch() {
+                    const approved = this.certStatus && this.certStatus.releasePort80Unit;
+                    const current = this.certPortStatus && this.certPortStatus.occupantUnit;
+                    return !!(this.certForm.releasePort80 && approved && current && approved !== current);
+                },
+                certUnitMismatchText() {
+                    const approved = (this.certStatus && this.certStatus.releasePort80Unit) || '';
+                    const current = this.certPortOccupant;
+                    return '{{ i18n "pages.settings.autoCertReleaseMismatch" }}'
+                        .replace('{approved}', approved)
+                        .replace('{current}', current);
+                },
+                certIssueDisabled() {
+                    if (this.certPortChecking || this.certOptionsSaving) return true;
+                    if (!this.certPortBlocked) return false;
+                    if (this.certUnitMismatch) return true;
+                    const releasable = this.certForm.releasePort80 && this.certPortStatus &&
+                        this.certPortStatus.canStop && !this.certPortStatus.localFree && this.certPortStatus.reachable;
+                    return !releasable;
+                },
+                certPortHintClass() {
+                    if (!this.certPortStatus) return 'auto-cert-meta';
+                    if (this.certPortStatus.blocked) return 'auto-cert-error';
+                    if (this.certPortStatus.checked) return 'auto-cert-success';
+                    return 'auto-cert-meta auto-cert-warn';
+                }
+            },
+            watch: {
+                certTargetIsIP(isIP) {
+                    if (isIP && this.certForm.provider === 'zerossl') {
+                        this.certForm.provider = 'letsencrypt';
+                    }
+                },
+                'certForm.target'() {
+                    this.certPortStatus = null;
+                }
+            },
+            async mounted() {
+                this.loadCertStatus(true).then(() => this.checkCertPort(false));
+                await this.getAllSetting();
+                while (true) {
+                    await PromiseUtil.sleep(1000);
+                    this.saveBtnDisable = this.oldAllSetting.equals(this.allSetting);
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -42,6 +42,7 @@ func (a *NodeSyncController) initRouter(g *gin.RouterGroup) {
 	g.POST("/init/:id", a.initNode)
 	g.POST("/push/:id", a.pushNode)
 	g.POST("/merge/:id", a.mergeNode)
+	g.POST("/overwrite/:id", a.overwriteNode)
 	g.POST("/auto", a.saveAuto)
 
 	g.GET("/info", a.remoteInfo)
@@ -171,6 +172,21 @@ func (a *NodeSyncController) mergeNode(c *gin.Context) {
 	}
 	result, err := a.syncService.MergeNode(id, userId)
 	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.mergeDone"), result, err)
+}
+
+func (a *NodeSyncController) overwriteNode(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.overwriteDone"), err)
+		return
+	}
+	user := session.GetLoginUser(c)
+	userId := 0
+	if user != nil {
+		userId = user.Id
+	}
+	result, err := a.syncService.OverwriteFromNode(id, userId)
+	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.overwriteDone"), result, err)
 }
 
 type syncAutoForm struct {

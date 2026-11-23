@@ -129,6 +129,10 @@
                                         <a-icon type="swap"></a-icon>
                                         {{ i18n "pages.nodeSync.mergeData" }}
                                     </a-menu-item>
+                                    <a-menu-item v-if="record.ready" key="overwrite">
+                                        <a-icon type="import"></a-icon>
+                                        {{ i18n "pages.nodeSync.overwriteMaster" }}
+                                    </a-menu-item>
                                     <a-menu-item key="check">
                                         <a-icon type="sync"></a-icon>
                                         {{ i18n "pages.nodeSync.checkNode" }}
@@ -402,6 +406,9 @@
                     case 'merge':
                         this.confirmMerge(record);
                         break;
+                    case 'overwrite':
+                        this.confirmOverwrite(record);
+                        break;
                     case 'check':
                         this.checkNode(record.id);
                         break;
@@ -457,6 +464,31 @@
                                 .replace('{rules}', r.rules || 0)
                                 .replace('{skipped}', r.skipped || 0);
                             this.$message.info(summary);
+                        }
+                        await this.getNodes();
+                    },
+                });
+            },
+            confirmOverwrite(record) {
+                this.$confirm({
+                    title: '{{ i18n "pages.nodeSync.overwriteMaster" }}',
+                    content: '{{ i18n "pages.nodeSync.overwriteConfirm" }}',
+                    okText: '{{ i18n "confirm" }}',
+                    cancelText: '{{ i18n "cancel" }}',
+                    okType: 'danger',
+                    class: themeSwitcher.currentTheme,
+                    onOk: async () => {
+                        const msg = await HttpUtil.post(`/xui/node_sync/overwrite/${record.id}`, {});
+                        if (msg.success) {
+                            const r = msg.obj || {};
+                            const summary = '{{ i18n "pages.nodeSync.overwriteSummary" }}'
+                                .replace('{inbounds}', r.inbounds || 0)
+                                .replace('{outbounds}', r.outbounds || 0)
+                                .replace('{rules}', r.routingRules || 0);
+                            this.$message.success(summary);
+                            if (r.warnings && r.warnings.length) {
+                                this.$warning({title: r.warnings.join('\n'), class: themeSwitcher.currentTheme});
+                            }
                         }
                         await this.getNodes();
                     },

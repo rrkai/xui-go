@@ -71,6 +71,7 @@
 "nodeSync" = "Node Sync"
 "settings" = "Panel Settings"
 "xray" = "Core Settings"
+"userCert" = "User Certificate"
 "logout" = "Log Out"
 "link" = "Manage"
 
@@ -274,6 +275,9 @@
 [pages.routingRules.toasts]
 "obtain" = "Failed to load routing rules"
 
+[pages.userCert]
+"title" = "User Certificate"
+
 [pages.nodeSync]
 "title" = "Node Sync"
 "desc" = "Add other XUI-GO panels as slaves and keep inbounds, outbounds and routing rules in sync"
@@ -284,6 +288,7 @@
 "syncInit" = "Initialize Sync"
 "pushSync" = "Push Sync"
 "mergeData" = "Merge Data"
+"overwriteMaster" = "Overwrite Master"
 "editNode" = "Edit Info"
 "deleteNode" = "Delete Panel"
 "remark" = "Remark"
@@ -311,6 +316,8 @@
 "initConfirm" = "The master database will replace the slave settings and all lists. Continue?"
 "pushConfirm" = "Push master data to the slave panel?"
 "mergeConfirm" = "Merge the slave data into the master panel?"
+"overwriteConfirm" = "This replaces the master's inbounds, outbounds and routing rules with the slave's data. Continue?"
+"overwriteSummary" = "Overwrite complete: inbounds {inbounds}, outbounds {outbounds}, rules {rules}"
 "deleteConfirm" = "Delete this panel and release its slave role?"
 "mergeSummary" = "Merged: inbounds {inbounds}, outbounds {outbounds}, rules {rules}, skipped {skipped}"
 "uninitAlert" = "This panel is not initialized yet. Run sync initialization first."
@@ -337,6 +344,7 @@
 "initDone" = "Sync initialization"
 "pushDone" = "Push sync"
 "mergeDone" = "Merge data"
+"overwriteDone" = "Overwrite master"
 "released" = "Release slave role"
 "autoSync" = "Auto sync"
 
@@ -626,7 +634,7 @@ telegramBotLanguage = "Telegram Bot Language"
 "restartPanelDesc" = "Are you sure you want to restart the panel? If you are unable to access the panel after restarting, please check the logs in the terminal script"
 "resetDefaultConfig" = "Reset to Default"
 "panelConfig" = "General"
-"panelSecurity" = "Panel Security"
+"panelSecurity" = "Panel Security & Certificate"
 "autoBackupTab" = "Auto Backup"
 "autoBackupEnable" = "Enable Auto Backup"
 "autoBackupEnableDesc" = "Back up the database automatically at the configured time"
@@ -658,7 +666,7 @@ telegramBotLanguage = "Telegram Bot Language"
 "autoBackupFtpPass" = "FTP Password"
 "autoBackupFtpDir" = "FTP Directory"
 "autoBackupFtpDirDesc" = "Default: /"
-"userSettings" = "Authentication"
+"userSettings" = "Change Credentials"
 "TGBotSettings" = "Telegram Bot"
 "panelListeningIP" = "Listen IP"
 "panelListeningIPDesc" = "The IP address for the web panel. (Leave blank to listen on all IPs)"
