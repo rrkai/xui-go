@@ -204,7 +204,7 @@ docker run -itd \
 
 - “主机名”列显示对端仪表台顶部名称：对端设置过面板名称时用面板名称，否则用系统主机名。对端改名后，本端在下次检查或同步时自动更新（打开页面就会检查一次）。
 - 每行“日志”按钮查看该对端的同步记录，倒序展示最近 100 条，按对端独立保存：
-  - 手动 / 自动同步结果：各类新增、更新、删除数量，本端应用与热加载状态、警告、耗时；
+  - 手动 / 自动同步结果：本端应用和对端应用分别列出各类新增、更新、删除数量与热加载状态，附警告、耗时；
   - 检查状态变化：从“已就绪”变为检查失败，或重新检查通过；
   - 时区对齐操作；
   - 被动对端收到推送的记录。
@@ -239,13 +239,18 @@ curl -sk -b cookie.txt -X POST "$BASE/xui/API/node_sync/push"
 ```json
 {"success":true,"msg":"同步成功","obj":{
   "total":1,"succeeded":1,"failed":0,
-  "items":[{"id":6,"remark":"香港备份节点","success":true,"changed":true,"hotReload":true,
+  "items":[{"id":6,"remark":"香港备份节点","success":true,"changed":true,
+    "localChanged":true,"peerChanged":true,"hotReload":true,"peerHotReload":true,
     "inbounds":{"added":1,"updated":0,"deleted":0},
+    "peerInbounds":{"added":0,"updated":1,"deleted":0},
     "outbounds":{"added":0,"updated":0,"deleted":0},
+    "peerOutbounds":{"added":0,"updated":0,"deleted":0},
     "routingRules":{"added":0,"updated":0,"deleted":0},
+    "peerRoutingRules":{"added":0,"updated":0,"deleted":0},
     "warnings":[],"lastSync":1795454239,"lastSyncText":"2026-11-24 17:28"}]}}
 ```
 
+- `inbounds` / `outbounds` / `routingRules` 是本端应用（写库）的变更计数，`peerInbounds` / `peerOutbounds` / `peerRoutingRules` 是对端应用的变更计数；`localChanged` / `peerChanged` 分别表示本端、对端本轮是否实际应用了变更。
 - 部分对端失败不影响其他对端，失败原因见 `items[].message`。
 - 全部失败或没有已就绪的对端时 `success` 为 `false`。
 - 撞上自动同步正在执行时，接口最多等待 10 秒重试。

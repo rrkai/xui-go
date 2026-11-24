@@ -135,18 +135,24 @@ type SyncApplyResult struct {
 }
 
 type SyncPeerResult struct {
-	Id           int           `json:"id"`
-	Remark       string        `json:"remark"`
-	Success      bool          `json:"success"`
-	Message      string        `json:"message,omitempty"`
-	Inbounds     SyncKindCount `json:"inbounds"`
-	Outbounds    SyncKindCount `json:"outbounds"`
-	RoutingRules SyncKindCount `json:"routingRules"`
-	Changed      bool          `json:"changed"`
-	HotReload    bool          `json:"hotReload"`
-	Warnings     []string      `json:"warnings"`
-	LastSync     int64         `json:"lastSync"`
-	LastSyncText string        `json:"lastSyncText"`
+	Id               int           `json:"id"`
+	Remark           string        `json:"remark"`
+	Success          bool          `json:"success"`
+	Message          string        `json:"message,omitempty"`
+	Inbounds         SyncKindCount `json:"inbounds"`
+	Outbounds        SyncKindCount `json:"outbounds"`
+	RoutingRules     SyncKindCount `json:"routingRules"`
+	PeerInbounds     SyncKindCount `json:"peerInbounds"`
+	PeerOutbounds    SyncKindCount `json:"peerOutbounds"`
+	PeerRoutingRules SyncKindCount `json:"peerRoutingRules"`
+	Changed          bool          `json:"changed"`
+	LocalChanged     bool          `json:"localChanged"`
+	PeerChanged      bool          `json:"peerChanged"`
+	HotReload        bool          `json:"hotReload"`
+	PeerHotReload    bool          `json:"peerHotReload"`
+	Warnings         []string      `json:"warnings"`
+	LastSync         int64         `json:"lastSync"`
+	LastSyncText     string        `json:"lastSyncText"`
 }
 
 type SyncBatchResult struct {
@@ -770,6 +776,13 @@ func syncChangedText(changed bool) string {
 	return "无变更"
 }
 
+func syncAppliedText(changed bool, inbound, outbound, rule SyncKindCount, hotReload bool) string {
+	if !changed {
+		return "无变更"
+	}
+	return "有变更（" + formatSyncKindSummary(inbound, outbound, rule) + "）；热加载：" + syncReloadText(hotReload)
+}
+
 func syncReloadText(hotReload bool) string {
 	if hotReload {
 		return "成功"
@@ -851,8 +864,14 @@ func (s *NodeSyncService) SyncNodes(id int) (*SyncBatchResult, error) {
 			item.Inbounds = applied.Inbounds
 			item.Outbounds = applied.Outbounds
 			item.RoutingRules = applied.RoutingRules
+			item.PeerInbounds = applied.PeerInbounds
+			item.PeerOutbounds = applied.PeerOutbounds
+			item.PeerRoutingRules = applied.PeerRoutingRules
 			item.Changed = applied.Changed
+			item.LocalChanged = applied.LocalChanged
+			item.PeerChanged = applied.PeerChanged
 			item.HotReload = applied.HotReload
+			item.PeerHotReload = applied.PeerHotReload
 			item.Warnings = applied.Warnings
 			item.LastSync = applied.LastSync
 			item.LastSyncText = applied.LastSyncText
@@ -909,8 +928,8 @@ func (s *NodeSyncService) syncPeerOnce(id int) (*SyncPeerResult, error) {
 	level := "info"
 	lines := []string{
 		fmt.Sprintf("同步完成（对端：%s）", syncNodeName(node)),
-		"变更：" + formatSyncKindSummary(result.Inbounds, result.Outbounds, result.RoutingRules),
-		fmt.Sprintf("本端应用：%s；热加载：%s", syncChangedText(result.Changed), syncReloadText(result.HotReload)),
+		"本端应用：" + syncAppliedText(result.LocalChanged, result.Inbounds, result.Outbounds, result.RoutingRules, result.HotReload),
+		"对端应用：" + syncAppliedText(result.PeerChanged, result.PeerInbounds, result.PeerOutbounds, result.PeerRoutingRules, result.PeerHotReload),
 	}
 	if len(result.Warnings) > 0 {
 		level = "warn"
@@ -984,6 +1003,7 @@ func (s *NodeSyncService) syncPeerRound(node *model.SyncNode) (*SyncPeerResult, 
 	}
 	changed := !datasetContentEqual(localData, merged.Data)
 	result.Changed = changed
+	result.LocalChanged = changed
 	if changed {
 		applied, err := s.applyDataSet(merged.Data, firstUserId())
 		if err != nil {
@@ -1004,17 +1024,20 @@ func (s *NodeSyncService) syncPeerRound(node *model.SyncNode) (*SyncPeerResult, 
 		return nil, err
 	}
 	// The peer may have had the only pending change (e.g. a delete that this
-	// side already applied locally); surface it in the result.
-	if !result.Changed {
-		peerChanges := remoteResult.InboundChanges.Added + remoteResult.InboundChanges.Updated + remoteResult.InboundChanges.Deleted +
-			remoteResult.OutboundChanges.Added + remoteResult.OutboundChanges.Updated + remoteResult.OutboundChanges.Deleted +
-			remoteResult.RuleChanges.Added + remoteResult.RuleChanges.Updated + remoteResult.RuleChanges.Deleted
-		if peerChanges > 0 {
-			result.Changed = true
-			result.Inbounds = remoteResult.InboundChanges
-			result.Outbounds = remoteResult.OutboundChanges
-			result.RoutingRules = remoteResult.RuleChanges
-		}
+	// side already applied in an earlier round); surface it in the result.
+	peerChanges := remoteResult.InboundChanges.Added + remoteResult.InboundChanges.Updated + remoteResult.InboundChanges.Deleted +
+		remoteResult.OutboundChanges.Added + remoteResult.OutboundChanges.Updated + remoteResult.OutboundChanges.Deleted +
+		remoteResult.RuleChanges.Added + remoteResult.RuleChanges.Updated + remoteResult.RuleChanges.Deleted
+	result.PeerChanged = peerChanges > 0
+	result.PeerInbounds = remoteResult.InboundChanges
+	result.PeerOutbounds = remoteResult.OutboundChanges
+	result.PeerRoutingRules = remoteResult.RuleChanges
+	result.PeerHotReload = remoteResult.HotReload
+	if !result.Changed && peerChanges > 0 {
+		result.Changed = true
+		result.Inbounds = remoteResult.InboundChanges
+		result.Outbounds = remoteResult.OutboundChanges
+		result.RoutingRules = remoteResult.RuleChanges
 	}
 
 	node.BaseData = marshalSyncDataSet(merged.Data)
