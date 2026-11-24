@@ -46,6 +46,9 @@ func (a *NodeSyncController) initRouter(g *gin.RouterGroup) {
 	g.GET("/info", a.remoteInfo)
 	g.GET("/export", a.exportData)
 	g.POST("/receive-merge", a.receiveMerge)
+	g.POST("/timezone/apply", a.applyTimezone)
+	g.POST("/align-time/:id", a.alignTime)
+	g.GET("/logs/:id", a.nodeLogs)
 
 	// Legacy master/slave endpoints. They stay routed so old peers get a clear
 	// message instead of silently overwriting data.
@@ -212,6 +215,41 @@ func (a *NodeSyncController) receiveMerge(c *gin.Context) {
 	}
 	result, err := a.syncService.ReceiveMerge(payload)
 	jsonObj(c, result, err)
+}
+
+type syncTimezoneForm struct {
+	Timezone  string `json:"timezone" form:"timezone"`
+	UtcOffset *int64 `json:"utcOffset" form:"utcOffset"`
+}
+
+func (a *NodeSyncController) applyTimezone(c *gin.Context) {
+	var form syncTimezoneForm
+	if err := c.ShouldBind(&form); err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	info, err := a.syncService.ApplyTimezone(form.Timezone, form.UtcOffset)
+	jsonObj(c, info, err)
+}
+
+func (a *NodeSyncController) alignTime(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	result, err := a.syncService.AlignNodeTimezone(id)
+	jsonObj(c, result, err)
+}
+
+func (a *NodeSyncController) nodeLogs(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	logs, err := a.syncService.ListLogs(id)
+	jsonObj(c, gin.H{"logs": logs}, err)
 }
 
 func (a *NodeSyncController) legacyEndpoint(c *gin.Context) {

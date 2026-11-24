@@ -46,6 +46,7 @@ func (a *APIController) nodeSyncApi(api *gin.RouterGroup) {
 		Handler gin.HandlerFunc
 	}{
 		{"GET", "/nodes", a.syncNodes},
+		{"GET", "/logs/:id", a.syncLogs},
 		{"POST", "/sync", a.syncPushAll},
 		{"POST", "/sync/:id", a.syncPushNode},
 		{"POST", "/push", a.syncPushAll},
@@ -75,6 +76,16 @@ func (a *APIController) syncNodes(c *gin.Context) {
 		"serverTime": info.ServerTime,
 		"nodes":      nodes,
 	}, nil)
+}
+
+func (a *APIController) syncLogs(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	logs, err := a.syncService.ListLogs(id)
+	jsonObj(c, gin.H{"logs": logs}, err)
 }
 
 func (a *APIController) syncPushAll(c *gin.Context) {

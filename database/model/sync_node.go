@@ -3,6 +3,7 @@ package model
 type SyncNode struct {
 	Id        int    `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
 	Remark    string `json:"remark" form:"remark"`
+	PeerTitle string `json:"peerTitle" form:"peerTitle"`
 	Address   string `json:"address" form:"address"`
 	Username  string `json:"username" form:"username"`
 	Password  string `json:"-"`

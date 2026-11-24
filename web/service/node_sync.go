@@ -45,6 +45,7 @@ const (
 
 	syncRequestTimeout = 60 * time.Second
 	syncClockSkewLimit = 60 * time.Second
+	syncLogLimit       = 100
 )
 
 var (
@@ -71,6 +72,7 @@ type SyncPanelInfo struct {
 type SyncNodeView struct {
 	Id           int    `json:"id"`
 	Remark       string `json:"remark"`
+	PeerTitle    string `json:"peerTitle"`
 	Address      string `json:"address"`
 	Username     string `json:"username"`
 	PeerId       string `json:"peerId"`
@@ -86,6 +88,7 @@ type SyncNodeCheck struct {
 	Online     bool   `json:"online"`
 	Version    string `json:"version"`
 	PanelId    string `json:"panelId"`
+	Title      string `json:"title"`
 	Kind       string `json:"kind"`
 	Error      string `json:"error"`
 	Timezone   string `json:"timezone"`
@@ -153,6 +156,23 @@ type SyncBatchResult struct {
 	Items     []*SyncPeerResult `json:"items"`
 }
 
+type SyncTimezoneResult struct {
+	NodeId    int            `json:"nodeId"`
+	Previous  string         `json:"previous"`
+	Timezone  string         `json:"timezone"`
+	ZoneName  string         `json:"zoneName"`
+	UtcOffset int64          `json:"utcOffset"`
+	Check     *SyncNodeCheck `json:"check"`
+}
+
+type SyncLogView struct {
+	Id       int    `json:"id"`
+	Time     int64  `json:"time"`
+	TimeText string `json:"timeText"`
+	Level    string `json:"level"`
+	Message  string `json:"message"`
+}
+
 type NodeSyncService struct {
 	settingService     SettingService
 	inboundService     InboundService
@@ -183,6 +203,14 @@ func panelTimeNow() panelTimeMeta {
 }
 
 func formatPanelTime(timestamp int64) string {
+	return formatPanelTimeLayout(timestamp, "2006-01-02 15:04")
+}
+
+func formatPanelTimeSeconds(timestamp int64) string {
+	return formatPanelTimeLayout(timestamp, "2006-01-02 15:04:05")
+}
+
+func formatPanelTimeLayout(timestamp int64, layout string) string {
 	if timestamp <= 0 {
 		return ""
 	}
@@ -190,7 +218,7 @@ func formatPanelTime(timestamp int64) string {
 	if err != nil || location == nil {
 		location = time.Local
 	}
-	return time.Unix(timestamp, 0).In(location).Format("2006-01-02 15:04")
+	return time.Unix(timestamp, 0).In(location).Format(layout)
 }
 
 func formatUtcOffset(offset int64) string {
@@ -265,6 +293,9 @@ func (s *NodeSyncService) PanelInfo() (*SyncPanelInfo, error) {
 	}
 	meta := panelTimeNow()
 	title, _ := s.settingService.GetPanelTitle()
+	if title == "" {
+		title, _ = os.Hostname()
+	}
 	var count int64
 	if err := database.GetDB().Model(&model.SyncNode{}).Count(&count).Error; err != nil {
 		return nil, err
@@ -285,7 +316,7 @@ func (s *NodeSyncService) PanelInfo() (*SyncPanelInfo, error) {
 func (s *NodeSyncService) ListNodes() ([]*SyncNodeView, error) {
 	nodes := make([]*model.SyncNode, 0, 8)
 	err := database.GetDB().
-		Select("id", "remark", "address", "username", "peer_id", "sort", "passive", "ready", "last_sync", "created_at").
+		Select("id", "remark", "peer_title", "address", "username", "peer_id", "sort", "passive", "ready", "last_sync", "created_at").
 		Order("sort asc, id asc").Find(&nodes).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, err
@@ -295,6 +326,7 @@ func (s *NodeSyncService) ListNodes() ([]*SyncNodeView, error) {
 		views = append(views, &SyncNodeView{
 			Id:           node.Id,
 			Remark:       node.Remark,
+			PeerTitle:    node.PeerTitle,
 			Address:      node.Address,
 			Username:     node.Username,
 			PeerId:       node.PeerId,
@@ -348,6 +380,7 @@ func (s *NodeSyncService) AddNode(remark, address, username, password string) (*
 	}
 	node := &model.SyncNode{
 		Remark:    strings.TrimSpace(remark),
+		PeerTitle: info.Title,
 		Address:   client.base,
 		Username:  username,
 		Password:  encrypted,
@@ -358,6 +391,7 @@ func (s *NodeSyncService) AddNode(remark, address, username, password string) (*
 	if err := database.GetDB().Create(node).Error; err != nil {
 		return nil, err
 	}
+	s.addSyncLog(node.Id, "info", "已添加对端："+syncNodeName(node))
 	return node, nil
 }
 
@@ -404,6 +438,7 @@ func (s *NodeSyncService) UpdateNode(id int, remark, address, username, password
 		node.Address = client.base
 		node.Username = effectiveUser
 		node.PeerId = info.PanelId
+		node.PeerTitle = info.Title
 		node.Ready = false
 		if password != "" {
 			encrypted, err := encryptSyncPassword(password)
@@ -416,6 +451,9 @@ func (s *NodeSyncService) UpdateNode(id int, remark, address, username, password
 
 	if err := database.GetDB().Save(node).Error; err != nil {
 		return nil, err
+	}
+	if credentialsChanged {
+		s.addSyncLog(node.Id, "info", "对端信息已更新，需要重新检查")
 	}
 	return node, nil
 }
@@ -447,6 +485,9 @@ func (s *NodeSyncService) DeleteNode(id int) (string, error) {
 	}
 	if err := database.GetDB().Delete(&model.SyncNode{}, id).Error; err != nil {
 		return "", err
+	}
+	if err := database.GetDB().Where("node_id = ?", id).Delete(&model.SyncLog{}).Error; err != nil {
+		logger.Warning("node sync: delete sync logs failed: ", err)
 	}
 	autoSyncAttemptMu.Lock()
 	delete(autoSyncAttemptAt, id)
@@ -511,6 +552,7 @@ func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
 	if err != nil {
 		return nil, err
 	}
+	wasReady := node.Ready
 	result := &SyncNodeCheck{Passive: node.Passive, Ready: node.Ready}
 	if node.Passive {
 		result.Kind = SyncCheckAddress
@@ -554,6 +596,13 @@ func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
 	}
 	result.Version = info.Version
 	result.PanelId = info.PanelId
+	result.Title = info.Title
+	if info.Title != "" && info.Title != node.PeerTitle {
+		node.PeerTitle = info.Title
+		if err := database.GetDB().Model(node).Update("peer_title", info.Title).Error; err != nil {
+			logger.Warning("node sync: update peer title failed: ", err)
+		}
+	}
 	result.Timezone = info.Timezone
 	result.ZoneName = info.ZoneName
 	result.ServerTime = info.ServerTime
@@ -569,6 +618,9 @@ func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
 			node.Ready = false
 			database.GetDB().Save(node)
 			result.Ready = false
+			if wasReady {
+				s.addSyncLog(node.Id, "warn", "检查未通过："+result.Error+"；已暂停同步")
+			}
 		}
 		return result, nil
 	}
@@ -578,6 +630,9 @@ func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
 		node.Ready = false
 		database.GetDB().Save(node)
 		result.Ready = false
+		if wasReady {
+			s.addSyncLog(node.Id, "warn", "检查未通过："+result.Error+"；已暂停同步")
+		}
 		return result, nil
 	}
 	node.PeerId = info.PanelId
@@ -590,7 +645,178 @@ func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
 	}
 	result.Online = true
 	result.Ready = true
+	if !wasReady {
+		s.addSyncLog(node.Id, "info", "检查通过，已就绪")
+	}
 	return result, nil
+}
+
+func resolveSyncTimezone(name string, expectedOffset *int64) (*time.Location, int64, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 64 {
+		return nil, 0, common.NewError("时区参数无效")
+	}
+	location, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, 0, common.NewErrorf("时区 %s 无效", name)
+	}
+	_, offset := time.Now().In(location).Zone()
+	if expectedOffset != nil && int64(offset) != *expectedOffset {
+		return nil, 0, common.NewErrorf("时区 %s 当前为 %s，与请求的 %s 不一致，请检查两端系统时区数据",
+			name, formatUtcOffset(int64(offset)), formatUtcOffset(*expectedOffset))
+	}
+	return location, int64(offset), nil
+}
+
+// ApplyTimezone is called by a peer panel that holds this panel's login
+// credentials; the UTC offset guard keeps both sides on the same clock.
+func (s *NodeSyncService) ApplyTimezone(name string, expectedOffset *int64) (*SyncPanelInfo, error) {
+	location, _, err := resolveSyncTimezone(name, expectedOffset)
+	if err != nil {
+		return nil, err
+	}
+	name = location.String()
+	previous, _ := s.settingService.GetTimeLocationSetting()
+	if previous != name {
+		if err := s.settingService.SetTimeLocation(name); err != nil {
+			return nil, err
+		}
+		logger.Info("node sync: panel time zone changed from ", previous, " to ", name, " by a peer request")
+	}
+	return s.PanelInfo()
+}
+
+func (s *NodeSyncService) AlignNodeTimezone(id int) (*SyncTimezoneResult, error) {
+	node, err := s.loadNode(id)
+	if err != nil {
+		return nil, err
+	}
+	if node.Passive {
+		return nil, common.NewError("被动对端由对方发起同步，不能主动修改对端时区")
+	}
+	password, err := decryptSyncPassword(node.Password)
+	if err != nil {
+		return nil, common.NewError("节点密码解密失败，请重新填写密码")
+	}
+	client, err := newPanelClient(node.Address, syncRequestTimeout)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.login(node.Username, password); err != nil {
+		return nil, common.NewError("连接对端失败: ", err)
+	}
+	info, err := client.info()
+	if err != nil {
+		return nil, err
+	}
+	if node.PeerId != "" && node.PeerId != info.PanelId {
+		return nil, common.NewError("对端面板标识与记录不一致，可能已重装，请删除后重新添加")
+	}
+	local := panelTimeNow()
+	applied := &SyncPanelInfo{}
+	err = client.postJSON("/xui/node_sync/timezone/apply", map[string]interface{}{
+		"timezone":  local.Setting,
+		"utcOffset": local.Offset,
+	}, applied)
+	if err != nil {
+		if strings.Contains(err.Error(), "HTTP 404") {
+			return nil, common.NewError("对端版本不支持时区对齐，请把两端面板都升级到最新版")
+		}
+		return nil, err
+	}
+	logger.Info("node sync: aligned peer ", node.Address, " to time zone ", local.Setting)
+	s.addSyncLog(id, "info", fmt.Sprintf("已对齐对端时区：%s → %s（只修改对端面板时区设置）", info.Timezone, local.Setting))
+	check, err := s.CheckNode(id)
+	if err != nil {
+		return nil, err
+	}
+	return &SyncTimezoneResult{
+		NodeId:    id,
+		Previous:  info.Timezone,
+		Timezone:  local.Setting,
+		ZoneName:  local.Zone,
+		UtcOffset: local.Offset,
+		Check:     check,
+	}, nil
+}
+
+func syncNodeName(node *model.SyncNode) string {
+	title := strings.TrimSpace(node.PeerTitle)
+	remark := strings.TrimSpace(node.Remark)
+	switch {
+	case title != "" && remark != "" && remark != title:
+		return title + "（" + remark + "）"
+	case title != "":
+		return title
+	case remark != "":
+		return remark
+	default:
+		return node.Address
+	}
+}
+
+func formatSyncKindCount(count SyncKindCount) string {
+	return fmt.Sprintf("+%d ~%d -%d", count.Added, count.Updated, count.Deleted)
+}
+
+func formatSyncKindSummary(inbound, outbound, rule SyncKindCount) string {
+	return "入站 " + formatSyncKindCount(inbound) + "；出站 " + formatSyncKindCount(outbound) + "；路由 " + formatSyncKindCount(rule)
+}
+
+func syncChangedText(changed bool) string {
+	if changed {
+		return "有变更"
+	}
+	return "无变更"
+}
+
+func syncReloadText(hotReload bool) string {
+	if hotReload {
+		return "成功"
+	}
+	return "待重启"
+}
+
+func (s *NodeSyncService) addSyncLog(nodeId int, level, message string) {
+	if nodeId <= 0 || strings.TrimSpace(message) == "" {
+		return
+	}
+	db := database.GetDB()
+	entry := &model.SyncLog{NodeId: nodeId, Level: level, Message: message, CreatedAt: time.Now().Unix()}
+	if err := db.Create(entry).Error; err != nil {
+		logger.Warning("node sync: write sync log failed: ", err)
+		return
+	}
+	var cutoff int
+	err := db.Model(&model.SyncLog{}).Where("node_id = ?", nodeId).
+		Order("id desc").Offset(syncLogLimit-1).Limit(1).Pluck("id", &cutoff).Error
+	if err != nil || cutoff <= 0 {
+		return
+	}
+	if err := db.Where("node_id = ? AND id < ?", nodeId, cutoff).Delete(&model.SyncLog{}).Error; err != nil {
+		logger.Warning("node sync: prune sync logs failed: ", err)
+	}
+}
+
+func (s *NodeSyncService) ListLogs(nodeId int) ([]*SyncLogView, error) {
+	if _, err := s.loadNode(nodeId); err != nil {
+		return nil, err
+	}
+	entries := make([]*model.SyncLog, 0, 32)
+	if err := database.GetDB().Where("node_id = ?", nodeId).Order("id desc").Limit(syncLogLimit).Find(&entries).Error; err != nil {
+		return nil, err
+	}
+	views := make([]*SyncLogView, 0, len(entries))
+	for _, entry := range entries {
+		views = append(views, &SyncLogView{
+			Id:       entry.Id,
+			Time:     entry.CreatedAt,
+			TimeText: formatPanelTimeSeconds(entry.CreatedAt),
+			Level:    entry.Level,
+			Message:  entry.Message,
+		})
+	}
+	return views, nil
 }
 
 func (s *NodeSyncService) SyncNodes(id int) (*SyncBatchResult, error) {
@@ -674,6 +900,28 @@ func (s *NodeSyncService) syncPeerOnce(id int) (*SyncPeerResult, error) {
 	if !node.Ready || node.PeerId == "" {
 		return nil, common.NewError("请先检查对端后再同步")
 	}
+	start := time.Now()
+	result, err := s.syncPeerRound(node)
+	if err != nil {
+		s.addSyncLog(node.Id, "error", fmt.Sprintf("同步失败（对端：%s）：%v", syncNodeName(node), err))
+		return nil, err
+	}
+	level := "info"
+	lines := []string{
+		fmt.Sprintf("同步完成（对端：%s）", syncNodeName(node)),
+		"变更：" + formatSyncKindSummary(result.Inbounds, result.Outbounds, result.RoutingRules),
+		fmt.Sprintf("本端应用：%s；热加载：%s", syncChangedText(result.Changed), syncReloadText(result.HotReload)),
+	}
+	if len(result.Warnings) > 0 {
+		level = "warn"
+		lines = append(lines, "警告："+strings.Join(result.Warnings, "；"))
+	}
+	lines = append(lines, "耗时："+time.Since(start).Round(10*time.Millisecond).String())
+	s.addSyncLog(node.Id, level, strings.Join(lines, "\n"))
+	return result, nil
+}
+
+func (s *NodeSyncService) syncPeerRound(node *model.SyncNode) (*SyncPeerResult, error) {
 	password, err := decryptSyncPassword(node.Password)
 	if err != nil {
 		return nil, common.NewError("节点密码解密失败，请重新编辑节点信息")
@@ -709,6 +957,9 @@ func (s *NodeSyncService) syncPeerOnce(id int) (*SyncPeerResult, error) {
 	}
 	if remotePayload.PanelId == "" || remotePayload.PanelId != node.PeerId {
 		return nil, common.NewError("对端返回的面板标识不一致")
+	}
+	if title := strings.TrimSpace(remotePayload.Title); title != "" {
+		node.PeerTitle = title
 	}
 	remoteData := remotePayload.dataset()
 	localData, err := s.BuildLocalDataSet()
@@ -819,6 +1070,7 @@ func (s *NodeSyncService) ReceiveMerge(payload *SyncPayload) (*SyncApplyResult, 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		node = &model.SyncNode{
 			Remark:    syncPassiveRemark(payload),
+			PeerTitle: strings.TrimSpace(payload.Title),
 			Address:   sanitizeSyncAddress(payload.Address),
 			PeerId:    payload.PanelId,
 			Sort:      s.nextSort(),
@@ -831,6 +1083,8 @@ func (s *NodeSyncService) ReceiveMerge(payload *SyncPayload) (*SyncApplyResult, 
 		}
 	} else if err != nil {
 		return nil, err
+	} else if title := strings.TrimSpace(payload.Title); title != "" {
+		node.PeerTitle = title
 	}
 
 	localData, err := s.BuildLocalDataSet()
@@ -849,7 +1103,8 @@ func (s *NodeSyncService) ReceiveMerge(payload *SyncPayload) (*SyncApplyResult, 
 		RuleChanges:     merged.Summary.RoutingRules,
 		Warnings:        merged.Summary.Warnings,
 	}
-	if !datasetContentEqual(localData, merged.Data) {
+	changed := !datasetContentEqual(localData, merged.Data)
+	if changed {
 		applied, err := s.applyDataSet(merged.Data, firstUserId())
 		if err != nil {
 			return nil, err
@@ -867,6 +1122,17 @@ func (s *NodeSyncService) ReceiveMerge(payload *SyncPayload) (*SyncApplyResult, 
 	if err := database.GetDB().Save(node).Error; err != nil {
 		return nil, err
 	}
+	level := "info"
+	lines := []string{
+		fmt.Sprintf("收到对端推送（%s）", syncNodeName(node)),
+		"变更：" + formatSyncKindSummary(result.InboundChanges, result.OutboundChanges, result.RuleChanges),
+		fmt.Sprintf("本端应用：%s；热加载：%s", syncChangedText(changed), syncReloadText(result.HotReload)),
+	}
+	if len(result.Warnings) > 0 {
+		level = "warn"
+		lines = append(lines, "警告："+strings.Join(result.Warnings, "；"))
+	}
+	s.addSyncLog(node.Id, level, strings.Join(lines, "\n"))
 	return result, nil
 }
 

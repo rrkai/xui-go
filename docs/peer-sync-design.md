@@ -36,6 +36,7 @@
 | --- | --- | --- |
 | `Sort` | int | 对端顺序（同步顺序，也是界面展示顺序） |
 | `PeerId` | string | 对端 panelId，添加对端时从对端 `info` 获取 |
+| `PeerTitle` | string | 对端面板主机名（仪表台顶部名称），检查 / 同步 / 收到推送时刷新 |
 | `BaseData` | text | 上次同步后的基线快照 JSON（dataset + state）；列表查询时显式 Select 排除该列 |
 
 角色字段 `settings.syncRole` / `settings.syncMasterName` 废弃：升级时清空。同步与否只看"有没有对端"。
@@ -62,6 +63,21 @@ CREATE TABLE sync_item_state (
 
 - 添加到对端时记录对方的 panelId 为 `PeerId`，用于校验 `receive-merge` 来源；
 - 冲突时间完全相同时按 panelId 字典序破平局，保证两端算出同一结果。
+
+### 3.4 同步日志 `sync_logs`
+
+```sql
+CREATE TABLE sync_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  node_id    INTEGER NOT NULL,  -- 关联 sync_nodes.id，删除对端时一并清理
+  level      TEXT    NOT NULL,  -- info | warn | error
+  message    TEXT    NOT NULL,  -- 多行文本
+  created_at INTEGER NOT NULL
+);
+```
+
+- 每端独立记录：同步轮次（变更计数、本端应用 / 热加载、警告、耗时）、检查就绪状态变化、时区对齐、被动端收到推送。
+- 每个对端保留最近 100 条，写入后自动裁剪；页面按对端倒序展示。
 
 ## 4. 条目时间戳打点
 
@@ -104,6 +120,9 @@ CREATE TABLE sync_item_state (
 | `GET /xui/node_sync/info` | 扩展 | 增加 `panelId`，保留 `app/version` |
 | `GET /xui/node_sync/export` | 扩展 | 返回 `{app, version, panelId, sentAt, inbounds, outbounds, routingRules, state}` |
 | `POST /xui/node_sync/receive-merge` | 新增 | 请求 `{senderId, dataset, state}`；校验 senderId 为已登记对端后，按同一合并逻辑处理再应用 |
+| `POST /xui/node_sync/timezone/apply` | 新增 | 由已登录的对端调用，把本面板时区设为请求的 IANA 名称并校验当前 UTC 偏移；返回最新面板信息 |
+| `POST /xui/node_sync/align-time/:id` | 新增 | 发起端操作：登录对端、把对端面板时区改成本面板时区，随后自动重新检查 |
+| `GET /xui/node_sync/logs/:id` | 新增 | 返回该对端最近 100 条同步日志（倒序）；`/xui/API/node_sync/logs/:id` 提供 API 别名 |
 | `receive-init` / `receive-apply` / `release` | 下线 | 保留路由返回 409 + 明确提示"已改为对等同步，请升级两端版本" |
 
 ### 6.2 对端关系
@@ -112,6 +131,7 @@ CREATE TABLE sync_item_state (
 - B 第一次收到来自 A 的 `receive-merge` 时，自动登记 A 为"被动对端"（无密码、不主动同步），在列表中可见、可删除。
 - 删除被动对端后，若对方仍能登录本面板并推送，会重新出现；彻底断开需要同时删除对方的对端配置或修改本面板密码。这是有意的取舍：能登录管理面板的一方本就能直接改数据。
 - 不支持自己添加自己（沿用现有 `isSelfPanelAddress` 检查），并额外校验 `panelId != 本面板`。
+- 新增对端默认不参与同步，必须先检查通过（版本、`panelId`、UTC 偏移一致、时钟偏差 ≤ 60 秒）；同步时重新校验，失败会清空 `Ready`。时区不一致时可在界面点"对齐时区"，由发起端登录对端修改其面板时区设置并自动重新检查；系统时钟偏差仍需在系统层用 NTP 校准。
 
 ### 6.3 一轮同步（对每个对端，串行）
 
@@ -183,7 +203,9 @@ CREATE TABLE sync_item_state (
 
 节点同步页（`web/html/xui/node_sync.html`）改版：
 
-- 列表列：顺序（上移/下移）、备注、地址、状态胶囊（面板地址错误 / 用户名密码错误 / 面板连接超时，保留）、最近同步时间、操作（立即同步 / 编辑 / 删除）。
+- 列表列：顺序（上移/下移）、备注、主机名（对端仪表台顶部名称，检查 / 同步后自动刷新）、地址、状态胶囊（面板地址错误 / 用户名密码错误 / 面板连接超时 / 时区不一致 / 时钟偏差 / 标识不一致 / 版本过低）、最近同步时间、操作（检查 / 立即同步 / 编辑 / 删除）。
+- 操作按钮旁提供"日志"：弹窗倒序展示该对端最近 100 条同步记录，含级别、面板时区时间和多行详情。
+- 时区不一致时状态旁提供"对齐时区"：确认后修改对端面板时区并自动重新检查；添加对端后检查失败的弹窗同样给出该按钮。
 - 顶部：添加对端、立即同步（全部）、自动同步间隔（5 / 10 / 30 / 60 分钟 / 24 小时 / 关闭）。
 - 同步结果：每端新增 / 更新 / 删除条数、hotReload 状态、warnings（端口冲突、规则排序）。
 - 被动对端（由对方发起同步）带标记，不能"立即同步"，可以删除。

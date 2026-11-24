@@ -372,6 +372,10 @@ func (s *SettingService) GetTimeLocationSetting() (string, error) {
 	return s.getString("timeLocation")
 }
 
+func (s *SettingService) SetTimeLocation(value string) error {
+	return s.setString("timeLocation", value)
+}
+
 func (s *SettingService) GetSecret() ([]byte, error) {
 	secret, err := s.getString("secret")
 	if secret == defaultValueMap["secret"] {

@@ -34,6 +34,50 @@
     .node-sync-order {
         white-space: nowrap;
     }
+    .node-sync-align {
+        height: auto;
+        padding: 0 4px;
+        font-size: 12px;
+    }
+    .node-sync-log-btn {
+        margin-left: 6px;
+    }
+    .node-sync-log-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: 60vh;
+        overflow: auto;
+    }
+    .node-sync-log-item {
+        padding: 8px 10px;
+        border: 1px solid rgba(128, 128, 128, .22);
+        border-radius: 6px;
+    }
+    .node-sync-log-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+    .node-sync-log-time {
+        font-size: 12px;
+        opacity: .65;
+    }
+    .node-sync-log-body {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.6;
+    }
+    .node-sync-log-empty {
+        padding: 24px 0;
+        text-align: center;
+        opacity: .6;
+    }
     .node-sync-auto {
         display: flex;
         flex-wrap: wrap;
@@ -99,7 +143,7 @@
                 </a-card>
                 <a-card>
                     <a-table :columns="columns" :data-source="nodes" row-key="id"
-                             :pagination="false" :scroll="{x: 1040}"
+                             :pagination="false" :scroll="{x: 1200}"
                              :locale="{emptyText: '{{ i18n "pages.nodeSync.empty" }}'}">
                         <span slot="order" slot-scope="text, record, index">
                             <a-button-group size="small" class="node-sync-order">
@@ -111,6 +155,10 @@
                             <span>[[ text || '#' + record.id ]]</span>
                             <a-tag v-if="record.passive" color="blue" style="margin-left: 6px;">[[ passiveText ]]</a-tag>
                         </span>
+                        <span slot="hostname" slot-scope="text">
+                            <span v-if="text">[[ text ]]</span>
+                            <span v-else class="node-sync-auto-hint">—</span>
+                        </span>
                         <span slot="address" slot-scope="text, record">
                             <span v-if="text" class="node-sync-address">[[ text ]]</span>
                             <span v-else class="node-sync-auto-hint">—</span>
@@ -121,9 +169,17 @@
                             </template>
                             <template v-else-if="nodeChecks[record.id]">
                                 <a-tag v-if="nodeChecks[record.id].loading" color="blue">[[ checkingText ]]</a-tag>
-                                <a-tag v-else-if="nodeChecks[record.id].error" color="red" :title="statusTooltip(record)">
-                                    [[ errorLabel(record) ]]
-                                </a-tag>
+                                <template v-else-if="nodeChecks[record.id].error">
+                                    <a-tag color="red" :title="statusTooltip(record)">
+                                        [[ errorLabel(record) ]]
+                                    </a-tag>
+                                    <a-button v-if="nodeChecks[record.id].kind === 'timezone' && !record.passive"
+                                              type="link" size="small" class="node-sync-align"
+                                              :loading="nodeChecks[record.id].aligning"
+                                              @click="confirmAlignTime(record)">
+                                        [[ alignTimeText ]]
+                                    </a-button>
+                                </template>
                                 <a-tag v-else color="green">[[ readyText ]]</a-tag>
                             </template>
                             <a-tag v-else :color="record.ready ? 'green' : 'orange'">
@@ -158,6 +214,9 @@
                                     </a-menu-item>
                                 </a-menu>
                             </a-dropdown>
+                            <a-button size="small" icon="file-text" class="node-sync-log-btn" @click="openLogs(record)">
+                                {{ i18n "pages.nodeSync.logs" }}
+                            </a-button>
                         </span>
                     </a-table>
                 </a-card>
@@ -183,6 +242,22 @@
                               :placeholder="modal.isEdit ? labels.passwordKeep : labels.password"></a-input>
         </a-form-item>
     </a-form>
+</a-modal>
+
+<a-modal id="node-sync-log-modal" v-model="logModal.visible" :title="logModal.title"
+         :footer="null" width="720px" :class="themeSwitcher.currentTheme">
+    <a-spin :spinning="logModal.loading">
+        <div v-if="!logModal.logs.length" class="node-sync-log-empty">[[ logsEmptyText ]]</div>
+        <div v-else class="node-sync-log-list">
+            <div v-for="entry in logModal.logs" :key="entry.id" class="node-sync-log-item">
+                <div class="node-sync-log-head">
+                    <a-tag :color="logLevelColor(entry.level)">[[ logLevelLabel(entry.level) ]]</a-tag>
+                    <span class="node-sync-log-time">[[ entry.timeText ]]</span>
+                </div>
+                <pre class="node-sync-log-body">[[ entry.message ]]</pre>
+            </div>
+        </div>
+    </a-spin>
 </a-modal>
 </a-layout>
 
@@ -218,6 +293,17 @@
             },
             checkOkText: '{{ i18n "pages.nodeSync.addedCheckOk" }}',
             checkFailedText: '{{ i18n "pages.nodeSync.checkFailed" }}',
+            alignTimeText: '{{ i18n "pages.nodeSync.alignTime" }}',
+            alignConfirmText: '{{ i18n "pages.nodeSync.alignConfirm" }}',
+            alignDoneText: '{{ i18n "pages.nodeSync.alignDone" }}',
+            alignClockText: '{{ i18n "pages.nodeSync.alignClock" }}',
+            logsTitleText: '{{ i18n "pages.nodeSync.logsTitle" }}',
+            logsEmptyText: '{{ i18n "pages.nodeSync.logsEmpty" }}',
+            logLevelLabels: {
+                info: '{{ i18n "pages.nodeSync.logInfo" }}',
+                warn: '{{ i18n "pages.nodeSync.logWarn" }}',
+                error: '{{ i18n "pages.nodeSync.logError" }}',
+            },
             syncNoChangeText: '{{ i18n "pages.nodeSync.syncNoChange" }}',
             syncNeedRestartText: '{{ i18n "pages.nodeSync.syncNeedRestart" }}',
             kindLabels: {
@@ -262,10 +348,11 @@
             columns: [
                 { title: '{{ i18n "pages.nodeSync.order" }}', width: 90, scopedSlots: { customRender: 'order' } },
                 { title: '{{ i18n "pages.nodeSync.remark" }}', dataIndex: 'remark', width: 160, scopedSlots: { customRender: 'remark' } },
-                { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 260, scopedSlots: { customRender: 'address' } },
+                { title: '{{ i18n "pages.nodeSync.hostname" }}', dataIndex: 'peerTitle', width: 160, scopedSlots: { customRender: 'hostname' } },
+                { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 240, scopedSlots: { customRender: 'address' } },
                 { title: '{{ i18n "pages.nodeSync.status" }}', width: 180, scopedSlots: { customRender: 'status' } },
                 { title: '{{ i18n "pages.nodeSync.lastSync" }}', dataIndex: 'lastSync', width: 160, scopedSlots: { customRender: 'lastSync' } },
-                { title: '{{ i18n "pages.nodeSync.operate" }}', width: 110, scopedSlots: { customRender: 'actions' } },
+                { title: '{{ i18n "pages.nodeSync.operate" }}', width: 190, scopedSlots: { customRender: 'actions' } },
             ],
             modal: {
                 visible: false,
@@ -276,6 +363,7 @@
                 originalPassword: '',
                 form: { remark: '', address: '', username: '', password: '' },
             },
+            logModal: { visible: false, loading: false, title: '', logs: [] },
         },
         computed: {
             hasActiveNodes() {
@@ -320,6 +408,7 @@
                         kind: msg.obj.kind || '',
                         error: msg.obj.error || '',
                         version: msg.obj.version || '',
+                        title: msg.obj.title || '',
                         timezone: msg.obj.timezone || '',
                         zoneName: msg.obj.zoneName || '',
                         skewMs: msg.obj.skewMs || 0,
@@ -330,8 +419,86 @@
                 const index = this.nodes.findIndex(node => node.id === id);
                 if (index >= 0 && !this.nodes[index].passive) {
                     this.$set(this.nodes[index], 'ready', !!check.ready);
+                    if (check.title && this.nodes[index].peerTitle !== check.title) {
+                        this.$set(this.nodes[index], 'peerTitle', check.title);
+                    }
                 }
                 return check;
+            },
+            confirmAlignTime(record) {
+                const check = this.nodeChecks[record.id] || {};
+                if (check.aligning) {
+                    return;
+                }
+                this.$confirm({
+                    title: this.alignTimeText,
+                    content: this.alignConfirmText + ' ' + this.timezone +
+                        (this.zoneName ? ' (' + this.zoneName + ')' : ''),
+                    okText: this.alignTimeText,
+                    cancelText: this.cancelText,
+                    class: themeSwitcher.currentTheme,
+                    onOk: () => this.alignTime(record),
+                });
+            },
+            async alignTime(record) {
+                const current = this.nodeChecks[record.id] || {};
+                this.$set(this.nodeChecks, record.id, Object.assign({}, current, { aligning: true }));
+                const msg = await HttpUtil.post(`/xui/node_sync/align-time/${record.id}`, {});
+                if (!msg.success || !msg.obj) {
+                    const failed = this.nodeChecks[record.id] || {};
+                    this.$set(this.nodeChecks, record.id, Object.assign({}, failed, { aligning: false }));
+                    return;
+                }
+                const check = msg.obj.check || {};
+                this.$set(this.nodeChecks, record.id, {
+                    loading: false,
+                    online: !!check.online,
+                    kind: check.kind || '',
+                    error: check.error || '',
+                    version: check.version || '',
+                    timezone: check.timezone || '',
+                    zoneName: check.zoneName || '',
+                    skewMs: check.skewMs || 0,
+                    ready: !!check.ready,
+                    aligning: false,
+                });
+                const index = this.nodes.findIndex(node => node.id === record.id);
+                if (index >= 0) {
+                    this.$set(this.nodes[index], 'ready', !!check.ready);
+                }
+                if (check.ready) {
+                    this.$message.success(this.alignDoneText);
+                    return;
+                }
+                this.$warning({
+                    title: check.kind === 'clock' ? this.alignClockText : this.checkFailedText,
+                    content: check.error || this.pendingText,
+                    class: themeSwitcher.currentTheme,
+                });
+            },
+            async openLogs(record) {
+                const name = record.peerTitle || record.remark || '#' + record.id;
+                this.logModal.title = this.logsTitleText + ' · ' + name;
+                this.logModal.visible = true;
+                this.logModal.loading = true;
+                this.logModal.logs = [];
+                const msg = await HttpUtil.get(`/xui/node_sync/logs/${record.id}`);
+                this.logModal.loading = false;
+                if (msg.success && msg.obj) {
+                    this.logModal.logs = msg.obj.logs || [];
+                }
+            },
+            logLevelLabel(level) {
+                return this.logLevelLabels[level] || this.logLevelLabels.info;
+            },
+            logLevelColor(level) {
+                if (level === 'error') {
+                    return 'red';
+                }
+                if (level === 'warn') {
+                    return 'orange';
+                }
+                return 'blue';
             },
             errorLabel(record) {
                 const check = this.nodeChecks[record.id] || {};
@@ -436,6 +603,16 @@
                             const check = await this.checkNode(nodeId);
                             if (check && check.online) {
                                 this.$message.success(this.checkOkText);
+                            } else if (check && check.kind === 'timezone') {
+                                this.$confirm({
+                                    title: this.checkFailedText,
+                                    content: ((check.error || '') + ' ' + this.alignConfirmText + ' ' +
+                                        this.timezone + (this.zoneName ? ' (' + this.zoneName + ')' : '')).trim(),
+                                    okText: this.alignTimeText,
+                                    cancelText: this.cancelText,
+                                    class: themeSwitcher.currentTheme,
+                                    onOk: () => this.alignTime({ id: nodeId }),
+                                });
                             } else {
                                 this.$warning({
                                     title: this.checkFailedText,
