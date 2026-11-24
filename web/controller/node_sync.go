@@ -7,7 +7,6 @@ import (
 
 	"github.com/alireza0/x-ui/util/common"
 	"github.com/alireza0/x-ui/web/service"
-	"github.com/alireza0/x-ui/web/session"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,21 +38,29 @@ func (a *NodeSyncController) initRouter(g *gin.RouterGroup) {
 	g.POST("/check/:id", a.checkNode)
 	g.GET("/password/:id", a.nodePassword)
 	g.POST("/delete/:id", a.deleteNode)
-	g.POST("/init/:id", a.initNode)
-	g.POST("/push/:id", a.pushNode)
-	g.POST("/merge/:id", a.mergeNode)
-	g.POST("/overwrite/:id", a.overwriteNode)
+	g.POST("/move/:id", a.moveNode)
+	g.POST("/sync", a.syncAll)
+	g.POST("/sync/:id", a.syncNode)
 	g.POST("/auto", a.saveAuto)
 
 	g.GET("/info", a.remoteInfo)
-	g.POST("/receive-init", a.receiveInit)
-	g.POST("/receive-apply", a.receiveApply)
 	g.GET("/export", a.exportData)
-	g.POST("/release", a.release)
+	g.POST("/receive-merge", a.receiveMerge)
+
+	// Legacy master/slave endpoints. They stay routed so old peers get a clear
+	// message instead of silently overwriting data.
+	g.POST("/init/:id", a.legacyEndpoint)
+	g.POST("/push", a.syncAll)
+	g.POST("/push/:id", a.syncNode)
+	g.POST("/merge/:id", a.legacyEndpoint)
+	g.POST("/overwrite/:id", a.legacyEndpoint)
+	g.POST("/receive-init", a.legacyEndpoint)
+	g.POST("/receive-apply", a.legacyEndpoint)
+	g.POST("/release", a.legacyEndpoint)
 }
 
 func (a *NodeSyncController) nodes(c *gin.Context) {
-	info, err := a.syncService.RoleInfo()
+	info, err := a.syncService.PanelInfo()
 	if err != nil {
 		jsonObj(c, nil, err)
 		return
@@ -63,14 +70,13 @@ func (a *NodeSyncController) nodes(c *gin.Context) {
 		jsonObj(c, nil, err)
 		return
 	}
-	autoInterval := 0
-	if info.Role != service.SyncRoleSlave {
-		autoInterval, _ = a.syncService.AutoInterval()
-	}
+	autoInterval, _ := a.syncService.AutoInterval()
 	jsonObj(c, gin.H{
-		"role":         info.Role,
-		"masterName":   info.MasterName,
 		"version":      info.Version,
+		"panelId":      info.PanelId,
+		"timezone":     info.Timezone,
+		"zoneName":     info.ZoneName,
+		"serverTime":   info.ServerTime,
 		"autoInterval": autoInterval,
 		"nodes":        nodes,
 	}, nil)
@@ -139,54 +145,36 @@ func (a *NodeSyncController) deleteNode(c *gin.Context) {
 	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.deleted"), warning, err)
 }
 
-func (a *NodeSyncController) initNode(c *gin.Context) {
+func (a *NodeSyncController) moveNode(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.initDone"), err)
+		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.moved"), err)
 		return
 	}
-	node, err := a.syncService.InitNode(id)
-	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.initDone"), node, err)
+	var form struct {
+		Direction string `json:"direction" form:"direction"`
+	}
+	if err := c.ShouldBind(&form); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.moved"), err)
+		return
+	}
+	err = a.syncService.MoveNode(id, strings.TrimSpace(form.Direction))
+	jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.moved"), err)
 }
 
-func (a *NodeSyncController) pushNode(c *gin.Context) {
+func (a *NodeSyncController) syncNode(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.pushDone"), err)
+		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.synced"), err)
 		return
 	}
-	result, err := a.syncService.PushNode(id)
-	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.pushDone"), result, err)
+	result, err := a.syncService.SyncNodes(id)
+	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.synced"), result, err)
 }
 
-func (a *NodeSyncController) mergeNode(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.mergeDone"), err)
-		return
-	}
-	user := session.GetLoginUser(c)
-	userId := 0
-	if user != nil {
-		userId = user.Id
-	}
-	result, err := a.syncService.MergeNode(id, userId)
-	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.mergeDone"), result, err)
-}
-
-func (a *NodeSyncController) overwriteNode(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.overwriteDone"), err)
-		return
-	}
-	user := session.GetLoginUser(c)
-	userId := 0
-	if user != nil {
-		userId = user.Id
-	}
-	result, err := a.syncService.OverwriteFromNode(id, userId)
-	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.overwriteDone"), result, err)
+func (a *NodeSyncController) syncAll(c *gin.Context) {
+	result, err := a.syncService.SyncNodes(0)
+	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.synced"), result, err)
 }
 
 type syncAutoForm struct {
@@ -207,40 +195,28 @@ func (a *NodeSyncController) saveAuto(c *gin.Context) {
 }
 
 func (a *NodeSyncController) remoteInfo(c *gin.Context) {
-	info, err := a.syncService.RoleInfo()
+	info, err := a.syncService.PanelInfo()
 	jsonObj(c, info, err)
 }
 
-func (a *NodeSyncController) receiveInit(c *gin.Context) {
-	file, _, err := c.Request.FormFile("db")
-	if err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.initDone"), err)
-		return
-	}
-	defer file.Close()
-	masterName := strings.TrimSpace(c.PostForm("masterName"))
-	err = a.syncService.ReceiveInit(file, masterName)
-	jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.initDone"), err)
+func (a *NodeSyncController) exportData(c *gin.Context) {
+	payload, err := a.syncService.BuildExportPayload()
+	jsonObj(c, payload, err)
 }
 
-func (a *NodeSyncController) receiveApply(c *gin.Context) {
-	data := &service.SyncDataSet{}
-	if err := c.ShouldBindJSON(data); err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.pushDone"), err)
+func (a *NodeSyncController) receiveMerge(c *gin.Context) {
+	payload := &service.SyncPayload{}
+	if err := c.ShouldBindJSON(payload); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.synced"), err)
 		return
 	}
-	result, err := a.syncService.ReceiveApply(data)
+	result, err := a.syncService.ReceiveMerge(payload)
 	jsonObj(c, result, err)
 }
 
-func (a *NodeSyncController) exportData(c *gin.Context) {
-	data, err := a.syncService.BuildLocalDataSet()
-	jsonObj(c, data, err)
-}
-
-func (a *NodeSyncController) release(c *gin.Context) {
-	err := a.syncService.ReleaseSlave()
-	jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.released"), err)
+func (a *NodeSyncController) legacyEndpoint(c *gin.Context) {
+	jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.synced"),
+		common.NewError("节点同步已改为对等双向同步，请把两端面板都升级到新版"))
 }
 
 func isSelfPanelAddress(c *gin.Context, address string) bool {

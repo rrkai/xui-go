@@ -13,6 +13,7 @@ const (
 	VersionShadowsocksKeys = 7
 	VersionPaths           = 8
 	VersionSyncNode        = 9
+	VersionPeerSync        = 10
 )
 
 type migration struct {
@@ -29,6 +30,7 @@ var registry = []migration{
 	{VersionShadowsocksKeys, migrateV007ShadowsocksKeys},
 	{VersionPaths, migrateV008Paths},
 	{VersionSyncNode, migrateV009SyncNode},
+	{VersionPeerSync, migrateV010PeerSync},
 }
 
 func Run(db *gorm.DB) error {

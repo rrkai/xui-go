@@ -262,6 +262,8 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 		return inbound, false, err
 	}
 
+	(&SyncStateService{}).Touch(SyncKindInbound, inboundEntryTag(inbound), false)
+
 	needRestart := false
 	if inbound.Enable {
 		s.xrayApi.Init(p.GetAPIAddr())
@@ -326,7 +328,11 @@ func (s *InboundService) DelInbound(id int) (bool, error) {
 	}
 
 	s.syncIpLimitStore(nil, removeEmails)
-	return needRestart, db.Delete(model.Inbound{}, id).Error
+	err = db.Delete(model.Inbound{}, id).Error
+	if err == nil {
+		(&SyncStateService{}).Touch(SyncKindInbound, inboundEntryTag(inbound), true)
+	}
+	return needRestart, err
 }
 
 func (s *InboundService) GetInbound(id int) (*model.Inbound, error) {
@@ -395,6 +401,12 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	}
 	if err = tx.Commit().Error; err != nil {
 		return inbound, false, err
+	}
+
+	stateService := &SyncStateService{}
+	stateService.Touch(SyncKindInbound, inboundEntryTag(oldInbound), false)
+	if tag != "" && tag != oldInbound.Tag {
+		stateService.Touch(SyncKindInbound, tag, true)
 	}
 
 	needRestart := false
@@ -562,6 +574,8 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 		return false, err
 	}
 
+	(&SyncStateService{}).Touch(SyncKindInbound, inboundEntryTag(oldInbound), false)
+
 	needRestart := false
 	s.xrayApi.Init(p.GetAPIAddr())
 	for _, client := range clients {
@@ -680,8 +694,11 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 		}
 	}
 	err = db.Save(oldInbound).Error
-	if err == nil && email != "" {
-		s.syncIpLimitStore(nil, []string{email})
+	if err == nil {
+		(&SyncStateService{}).Touch(SyncKindInbound, inboundEntryTag(oldInbound), false)
+		if email != "" {
+			s.syncIpLimitStore(nil, []string{email})
+		}
 	}
 	return needRestart, err
 }
@@ -796,6 +813,8 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 	if err = tx.Commit().Error; err != nil {
 		return false, err
 	}
+
+	(&SyncStateService{}).Touch(SyncKindInbound, inboundEntryTag(oldInbound), false)
 
 	needRestart := false
 	if len(oldEmail) > 0 {
@@ -1177,6 +1196,10 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 		if err != nil {
 			return false, 0, err
 		}
+		stateService := &SyncStateService{}
+		for _, inbound := range inbounds {
+			stateService.TouchTx(tx, SyncKindInbound, inboundEntryTag(inbound), false)
+		}
 	}
 	err = tx.Save(traffics).Error
 	if err != nil {
@@ -1202,15 +1225,16 @@ func (s *InboundService) disableInvalidInbounds(tx *gorm.DB) (bool, int64, error
 	now := time.Now().Unix() * 1000
 	needRestart := false
 
+	var tags []string
+	err := tx.Table("inbounds").
+		Select("inbounds.tag").
+		Where("((total > 0 and up + down >= total) or (expiry_time > 0 and expiry_time <= ?)) and enable = ?", now, true).
+		Scan(&tags).Error
+	if err != nil {
+		return false, 0, err
+	}
+
 	if p != nil {
-		var tags []string
-		err := tx.Table("inbounds").
-			Select("inbounds.tag").
-			Where("((total > 0 and up + down >= total) or (expiry_time > 0 and expiry_time <= ?)) and enable = ?", now, true).
-			Scan(&tags).Error
-		if err != nil {
-			return false, 0, err
-		}
 		s.xrayApi.Init(p.GetAPIAddr())
 		for _, tag := range tags {
 			err1 := s.xrayApi.DelInbound(tag)
@@ -1227,7 +1251,11 @@ func (s *InboundService) disableInvalidInbounds(tx *gorm.DB) (bool, int64, error
 	result := tx.Model(model.Inbound{}).
 		Where("((total > 0 and up + down >= total) or (expiry_time > 0 and expiry_time <= ?)) and enable = ?", now, true).
 		Update("enable", false)
-	err := result.Error
+	stateService := &SyncStateService{}
+	for _, tag := range tags {
+		stateService.TouchTx(tx, SyncKindInbound, tag, false)
+	}
+	err = result.Error
 	count := result.RowsAffected
 	return needRestart, count, err
 }
@@ -1486,6 +1514,7 @@ func (s *InboundService) DelDepletedClients(id int) (err error) {
 			if err != nil {
 				return err
 			}
+			(&SyncStateService{}).TouchTx(tx, SyncKindInbound, inboundEntryTag(oldInbound), false)
 		} else {
 			// Delete inbound if no client remains
 			s.DelInbound(depletedClient.InboundId)

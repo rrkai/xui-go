@@ -15,6 +15,11 @@
         justify-content: space-between;
         gap: 8px;
     }
+    .node-sync-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
     .node-sync-desc {
         display: block;
         margin-top: 4px;
@@ -25,6 +30,9 @@
         word-break: break-all;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 12px;
+    }
+    .node-sync-order {
+        white-space: nowrap;
     }
     .node-sync-auto {
         display: flex;
@@ -50,8 +58,6 @@
     <a-layout id="content-layout">
         <a-layout-content>
             <a-spin :spinning="spinning" :delay="500" tip='{{ i18n "loading"}}'>
-                <a-alert v-if="isSlave" type="warning" show-icon style="margin-bottom: 12px"
-                         :message="slaveAlertText"></a-alert>
                 <a-card hoverable style="margin-bottom: 12px;">
                     <div class="node-sync-head">
                         <div>
@@ -59,56 +65,73 @@
                             <strong style="font-size: 16px; margin-left: 6px;">{{ i18n "pages.nodeSync.title" }}</strong>
                             <span class="node-sync-desc">{{ i18n "pages.nodeSync.desc" }}</span>
                         </div>
-                        <a-button type="primary" icon="plus" :disabled="isSlave" @click="openAdd">
-                            {{ i18n "pages.nodeSync.addNode" }}
-                        </a-button>
+                        <div class="node-sync-actions">
+                            <a-button icon="cloud-sync" :loading="syncingAll" :disabled="!hasActiveNodes" @click="syncAll">
+                                {{ i18n "pages.nodeSync.syncAll" }}
+                            </a-button>
+                            <a-button type="primary" icon="plus" @click="openAdd">
+                                {{ i18n "pages.nodeSync.addNode" }}
+                            </a-button>
+                        </div>
                     </div>
-                    <div class="node-sync-auto" v-if="!isSlave">
-                        <span class="node-sync-auto-label">[[ autoTexts.label ]]</span>
+                    <div class="node-sync-auto">
+                        <span class="node-sync-auto-label">{{ i18n "pages.nodeSync.autoSync" }}</span>
                         <a-select v-model="autoInterval" size="small" style="width: 140px"
-                                  :disabled="savingAuto || nodes.length === 0">
-                            <a-select-option v-for="opt in autoTexts.options" :key="opt.value" :value="opt.value">
+                                  :disabled="savingAuto || !hasActiveNodes">
+                            <a-select-option v-for="opt in autoOptions" :key="opt.value" :value="opt.value">
                                 [[ opt.label ]]
                             </a-select-option>
                         </a-select>
                         <a-button size="small" type="primary" :loading="savingAuto"
-                                  :disabled="nodes.length === 0" @click="saveAuto">
+                                  :disabled="!hasActiveNodes" @click="saveAuto">
                             {{ i18n "pages.nodeSync.autoSave" }}
                         </a-button>
                         <a-button size="small" v-if="autoEnabled" :disabled="savingAuto" @click="disableAuto">
                             {{ i18n "pages.nodeSync.autoDisable" }}
                         </a-button>
                         <a-tag :color="autoEnabled ? 'green' : ''">
-                            [[ autoEnabled ? autoTexts.on : autoTexts.off ]]
+                            [[ autoEnabled ? autoOnText : autoOffText ]]
                         </a-tag>
-                        <span v-if="nodes.length === 0" class="node-sync-auto-hint">
+                        <span v-if="!hasActiveNodes" class="node-sync-auto-hint">
                             {{ i18n "pages.nodeSync.autoNeedNodes" }}
                         </span>
                     </div>
                 </a-card>
                 <a-card>
                     <a-table :columns="columns" :data-source="nodes" row-key="id"
-                             :pagination="false" :scroll="{x: 980}"
+                             :pagination="false" :scroll="{x: 1040}"
                              :locale="{emptyText: '{{ i18n "pages.nodeSync.empty" }}'}">
-                        <span slot="address" slot-scope="text">
-                            <span class="node-sync-address">[[ text ]]</span>
+                        <span slot="order" slot-scope="text, record, index">
+                            <a-button-group size="small" class="node-sync-order">
+                                <a-button icon="arrow-up" :disabled="index === 0" @click="move(record, 'up')"></a-button>
+                                <a-button icon="arrow-down" :disabled="index === nodes.length - 1" @click="move(record, 'down')"></a-button>
+                            </a-button-group>
+                        </span>
+                        <span slot="remark" slot-scope="text, record">
+                            <span>[[ text || '#' + record.id ]]</span>
+                            <a-tag v-if="record.passive" color="blue" style="margin-left: 6px;">[[ passiveText ]]</a-tag>
+                        </span>
+                        <span slot="address" slot-scope="text, record">
+                            <span v-if="text" class="node-sync-address">[[ text ]]</span>
+                            <span v-else class="node-sync-auto-hint">—</span>
                         </span>
                         <span slot="status" slot-scope="text, record">
-                            <template v-if="nodeChecks[record.id]">
+                            <template v-if="record.passive">
+                                <a-tag color="blue">[[ passiveText ]]</a-tag>
+                            </template>
+                            <template v-else-if="nodeChecks[record.id]">
                                 <a-tag v-if="nodeChecks[record.id].loading" color="blue">[[ checkingText ]]</a-tag>
-                                <a-tag v-else-if="nodeChecks[record.id].error" color="red" :title="nodeChecks[record.id].error">
-                                    [[ errorLabels[nodeChecks[record.id].kind] || errorLabels.address ]]
+                                <a-tag v-else-if="nodeChecks[record.id].error" color="red" :title="statusTooltip(record)">
+                                    [[ errorLabel(record) ]]
                                 </a-tag>
-                                <a-tag v-else :color="record.ready ? 'green' : 'orange'">
-                                    [[ record.ready ? readyText : pendingText ]]
-                                </a-tag>
+                                <a-tag v-else color="green">[[ readyText ]]</a-tag>
                             </template>
                             <a-tag v-else :color="record.ready ? 'green' : 'orange'">
                                 [[ record.ready ? readyText : pendingText ]]
                             </a-tag>
                         </span>
-                        <span slot="lastSync" slot-scope="text">
-                            [[ text ? formatTime(text) : neverText ]]
+                        <span slot="lastSync" slot-scope="text, record">
+                            [[ record.lastSyncText || neverText ]]
                         </span>
                         <span slot="actions" slot-scope="text, record">
                             <a-dropdown :trigger="['click']">
@@ -117,27 +140,15 @@
                                 </a-button>
                                 <a-menu slot="overlay" @click="({key}) => handleAction(key, record)"
                                         :theme="themeSwitcher.currentTheme">
-                                    <a-menu-item v-if="!record.ready" key="init">
-                                        <a-icon type="thunderbolt"></a-icon>
-                                        {{ i18n "pages.nodeSync.syncInit" }}
-                                    </a-menu-item>
-                                    <a-menu-item v-if="record.ready" key="push">
-                                        <a-icon type="cloud-download"></a-icon>
-                                        {{ i18n "pages.nodeSync.pushSync" }}
-                                    </a-menu-item>
-                                    <a-menu-item key="merge">
-                                        <a-icon type="swap"></a-icon>
-                                        {{ i18n "pages.nodeSync.mergeData" }}
-                                    </a-menu-item>
-                                    <a-menu-item v-if="record.ready" key="overwrite">
-                                        <a-icon type="import"></a-icon>
-                                        {{ i18n "pages.nodeSync.overwriteMaster" }}
-                                    </a-menu-item>
-                                    <a-menu-item key="check">
-                                        <a-icon type="sync"></a-icon>
+                                    <a-menu-item v-if="!record.passive" key="check">
+                                        <a-icon type="check-circle"></a-icon>
                                         {{ i18n "pages.nodeSync.checkNode" }}
                                     </a-menu-item>
-                                    <a-menu-item key="edit">
+                                    <a-menu-item v-if="!record.passive && record.ready" key="sync">
+                                        <a-icon type="cloud-sync"></a-icon>
+                                        {{ i18n "pages.nodeSync.syncNow" }}
+                                    </a-menu-item>
+                                    <a-menu-item v-if="!record.passive" key="edit">
                                         <a-icon type="edit"></a-icon>
                                         {{ i18n "pages.nodeSync.editNode" }}
                                     </a-menu-item>
@@ -185,41 +196,61 @@
             siderDrawer,
             themeSwitcher,
             spinning: false,
-            role: '',
-            masterName: '',
+            version: '',
+            timezone: '',
+            zoneName: '',
             nodes: [],
             nodeChecks: {},
+            syncingAll: false,
             checkingText: '{{ i18n "pages.nodeSync.statusChecking" }}',
+            passiveText: '{{ i18n "pages.nodeSync.passiveTag" }}',
+            readyText: '{{ i18n "pages.nodeSync.statusReady" }}',
+            pendingText: '{{ i18n "pages.nodeSync.statusPending" }}',
+            neverText: '{{ i18n "pages.nodeSync.never" }}',
             errorLabels: {
                 address: '{{ i18n "pages.nodeSync.statusBadAddress" }}',
                 auth: '{{ i18n "pages.nodeSync.statusAuthError" }}',
                 timeout: '{{ i18n "pages.nodeSync.statusTimeout" }}',
+                timezone: '{{ i18n "pages.nodeSync.statusTimezone" }}',
+                clock: '{{ i18n "pages.nodeSync.statusClock" }}',
+                identity: '{{ i18n "pages.nodeSync.statusIdentity" }}',
+                version: '{{ i18n "pages.nodeSync.statusVersion" }}',
+            },
+            checkOkText: '{{ i18n "pages.nodeSync.addedCheckOk" }}',
+            checkFailedText: '{{ i18n "pages.nodeSync.checkFailed" }}',
+            syncNoChangeText: '{{ i18n "pages.nodeSync.syncNoChange" }}',
+            syncNeedRestartText: '{{ i18n "pages.nodeSync.syncNeedRestart" }}',
+            kindLabels: {
+                inbounds: '{{ i18n "pages.nodeSync.kindInbound" }}',
+                outbounds: '{{ i18n "pages.nodeSync.kindOutbound" }}',
+                routingRules: '{{ i18n "pages.nodeSync.kindRule" }}',
+            },
+            countLabels: {
+                added: '{{ i18n "pages.nodeSync.countAdded" }}',
+                updated: '{{ i18n "pages.nodeSync.countUpdated" }}',
+                deleted: '{{ i18n "pages.nodeSync.countDeleted" }}',
+            },
+            hintLabels: {
+                version: '{{ i18n "pages.nodeSync.hintVersion" }}',
+                timezone: '{{ i18n "pages.nodeSync.hintTimezone" }}',
+                skew: '{{ i18n "pages.nodeSync.hintSkew" }}',
             },
             autoInterval: 5,
             autoEnabled: false,
             savingAuto: false,
-            autoTexts: {
-                label: '{{ i18n "pages.nodeSync.autoSync" }}',
-                on: '{{ i18n "pages.nodeSync.autoOn" }}',
-                off: '{{ i18n "pages.nodeSync.autoOff" }}',
-                needNodes: '{{ i18n "pages.nodeSync.autoNeedNodes" }}',
-                enabledToast: '{{ i18n "pages.nodeSync.autoOnToast" }}',
-                disabledToast: '{{ i18n "pages.nodeSync.autoOffToast" }}',
-                options: [
-                    { value: 5, label: '{{ i18n "pages.nodeSync.autoEvery5" }}' },
-                    { value: 10, label: '{{ i18n "pages.nodeSync.autoEvery10" }}' },
-                    { value: 30, label: '{{ i18n "pages.nodeSync.autoEvery30" }}' },
-                    { value: 60, label: '{{ i18n "pages.nodeSync.autoEvery60" }}' },
-                    { value: 1440, label: '{{ i18n "pages.nodeSync.autoEvery1440" }}' },
-                ],
-            },
+            autoOnText: '{{ i18n "pages.nodeSync.autoOn" }}',
+            autoOffText: '{{ i18n "pages.nodeSync.autoOff" }}',
+            autoOnToast: '{{ i18n "pages.nodeSync.autoOnToast" }}',
+            autoOffToast: '{{ i18n "pages.nodeSync.autoOffToast" }}',
+            autoOptions: [
+                { value: 5, label: '{{ i18n "pages.nodeSync.autoEvery5" }}' },
+                { value: 10, label: '{{ i18n "pages.nodeSync.autoEvery10" }}' },
+                { value: 30, label: '{{ i18n "pages.nodeSync.autoEvery30" }}' },
+                { value: 60, label: '{{ i18n "pages.nodeSync.autoEvery60" }}' },
+                { value: 1440, label: '{{ i18n "pages.nodeSync.autoEvery1440" }}' },
+            ],
             okText: '{{ i18n "confirm" }}',
             cancelText: '{{ i18n "cancel" }}',
-            readyText: '{{ i18n "pages.nodeSync.statusReady" }}',
-            pendingText: '{{ i18n "pages.nodeSync.statusPending" }}',
-            neverText: '{{ i18n "pages.nodeSync.never" }}',
-            slaveAlert: '{{ i18n "pages.nodeSync.slaveAlert" }}',
-            slaveMasterLabel: '{{ i18n "pages.nodeSync.slaveMaster" }}',
             labels: {
                 remark: '{{ i18n "pages.nodeSync.remark" }}',
                 address: '{{ i18n "pages.nodeSync.address" }}',
@@ -229,10 +260,11 @@
                 passwordKeep: '{{ i18n "pages.nodeSync.passwordKeep" }}',
             },
             columns: [
-                { title: '{{ i18n "pages.nodeSync.remark" }}', dataIndex: 'remark', width: 150, ellipsis: true },
-                { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 280, scopedSlots: { customRender: 'address' } },
-                { title: '{{ i18n "pages.nodeSync.status" }}', width: 190, scopedSlots: { customRender: 'status' } },
-                { title: '{{ i18n "pages.nodeSync.lastSync" }}', dataIndex: 'lastSync', width: 170, scopedSlots: { customRender: 'lastSync' } },
+                { title: '{{ i18n "pages.nodeSync.order" }}', width: 90, scopedSlots: { customRender: 'order' } },
+                { title: '{{ i18n "pages.nodeSync.remark" }}', dataIndex: 'remark', width: 160, scopedSlots: { customRender: 'remark' } },
+                { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 260, scopedSlots: { customRender: 'address' } },
+                { title: '{{ i18n "pages.nodeSync.status" }}', width: 180, scopedSlots: { customRender: 'status' } },
+                { title: '{{ i18n "pages.nodeSync.lastSync" }}', dataIndex: 'lastSync', width: 160, scopedSlots: { customRender: 'lastSync' } },
                 { title: '{{ i18n "pages.nodeSync.operate" }}', width: 110, scopedSlots: { customRender: 'actions' } },
             ],
             modal: {
@@ -246,14 +278,8 @@
             },
         },
         computed: {
-            isSlave() {
-                return this.role === 'slave';
-            },
-            slaveAlertText() {
-                if (!this.masterName) {
-                    return this.slaveAlert;
-                }
-                return `${this.slaveAlert} (${this.slaveMasterLabel}: ${this.masterName})`;
+            hasActiveNodes() {
+                return this.nodes.some(node => !node.passive);
             },
         },
         methods: {
@@ -262,8 +288,9 @@
                 try {
                     const msg = await HttpUtil.get('/xui/node_sync/nodes');
                     if (msg.success && msg.obj) {
-                        this.role = msg.obj.role || '';
-                        this.masterName = msg.obj.masterName || '';
+                        this.version = msg.obj.version || '';
+                        this.timezone = msg.obj.timezone || '';
+                        this.zoneName = msg.obj.zoneName || '';
                         this.nodes = msg.obj.nodes || [];
                         this.autoEnabled = (msg.obj.autoInterval || 0) > 0;
                         this.autoInterval = this.autoEnabled ? msg.obj.autoInterval : 5;
@@ -274,7 +301,7 @@
                 }
             },
             refreshChecks() {
-                const ids = this.nodes.map(node => node.id);
+                const ids = this.nodes.filter(node => !node.passive).map(node => node.id);
                 Object.keys(this.nodeChecks).forEach(key => {
                     if (ids.indexOf(Number(key)) === -1) {
                         this.$delete(this.nodeChecks, Number(key));
@@ -283,27 +310,50 @@
                 ids.forEach(id => this.checkNode(id));
             },
             async checkNode(id) {
-                this.$set(this.nodeChecks, id, {loading: true, error: ''});
+                this.$set(this.nodeChecks, id, { loading: true, error: '' });
                 const msg = await HttpUtil.post(`/xui/node_sync/check/${id}`, {});
+                let check = { loading: false, online: false, error: msg.msg || '', kind: '' };
                 if (msg.success && msg.obj) {
-                    this.$set(this.nodeChecks, id, {
+                    check = {
                         loading: false,
                         online: !!msg.obj.online,
                         kind: msg.obj.kind || '',
                         error: msg.obj.error || '',
                         version: msg.obj.version || '',
-                        role: msg.obj.role || '',
-                    });
-                } else {
-                    this.$set(this.nodeChecks, id, {loading: false, online: false, error: msg.msg || ''});
+                        timezone: msg.obj.timezone || '',
+                        zoneName: msg.obj.zoneName || '',
+                        skewMs: msg.obj.skewMs || 0,
+                        ready: !!msg.obj.ready,
+                    };
                 }
+                this.$set(this.nodeChecks, id, check);
+                const index = this.nodes.findIndex(node => node.id === id);
+                if (index >= 0 && !this.nodes[index].passive) {
+                    this.$set(this.nodes[index], 'ready', !!check.ready);
+                }
+                return check;
+            },
+            errorLabel(record) {
+                const check = this.nodeChecks[record.id] || {};
+                return this.errorLabels[check.kind] || this.errorLabels.address;
+            },
+            statusTooltip(record) {
+                const check = this.nodeChecks[record.id] || {};
+                if (check.error) {
+                    return check.error;
+                }
+                const parts = [];
+                if (check.version) parts.push(`${this.hintLabels.version} ${check.version}`);
+                if (check.timezone) parts.push(`${this.hintLabels.timezone} ${check.timezone} (${check.zoneName || ''})`);
+                if (typeof check.skewMs === 'number') parts.push(`${this.hintLabels.skew} ${Math.round(check.skewMs / 1000)}s`);
+                return parts.join(' · ');
             },
             async saveAuto() {
                 this.savingAuto = true;
                 try {
                     const msg = await HttpUtil.post('/xui/node_sync/auto', { interval: this.autoInterval });
                     if (msg.success) {
-                        this.$message.success(this.autoTexts.enabledToast);
+                        this.$message.success(this.autoOnToast);
                         await this.getNodes();
                     }
                 } finally {
@@ -315,17 +365,18 @@
                 try {
                     const msg = await HttpUtil.post('/xui/node_sync/auto', { interval: 0 });
                     if (msg.success) {
-                        this.$message.success(this.autoTexts.disabledToast);
+                        this.$message.success(this.autoOffToast);
                         await this.getNodes();
                     }
                 } finally {
                     this.savingAuto = false;
                 }
             },
-            formatTime(ts) {
-                const d = new Date(ts * 1000);
-                const pad = n => String(n).padStart(2, '0');
-                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            async move(record, direction) {
+                const msg = await HttpUtil.post(`/xui/node_sync/move/${record.id}`, { direction });
+                if (msg.success) {
+                    await this.getNodes();
+                }
             },
             openAdd() {
                 this.modal.isEdit = false;
@@ -366,29 +417,32 @@
                 this.modal.saving = true;
                 try {
                     let msg;
+                    let nodeId = 0;
                     if (this.modal.isEdit) {
                         const payload = Object.assign({}, form);
                         if (payload.password === this.modal.originalPassword) {
                             payload.password = '';
                         }
                         msg = await HttpUtil.post(`/xui/node_sync/update/${this.modal.id}`, payload);
-                        if (msg.success) {
-                            this.modal.visible = false;
-                            await this.getNodes();
-                        }
+                        nodeId = this.modal.id;
                     } else {
                         msg = await HttpUtil.post('/xui/node_sync/add', form);
-                        if (msg.success) {
-                            this.modal.visible = false;
-                            await this.getNodes();
-                            this.$confirm({
-                                title: '{{ i18n "pages.nodeSync.verifyTitle" }}',
-                                content: '{{ i18n "pages.nodeSync.verifyInitPrompt" }}',
-                                okText: '{{ i18n "pages.nodeSync.syncInit" }}',
-                                cancelText: '{{ i18n "pages.nodeSync.initLater" }}',
-                                class: themeSwitcher.currentTheme,
-                                onOk: () => this.runInit(msg.obj.id),
-                            });
+                        nodeId = msg.success && msg.obj ? msg.obj.id : 0;
+                    }
+                    if (msg.success) {
+                        this.modal.visible = false;
+                        await this.getNodes();
+                        if (nodeId) {
+                            const check = await this.checkNode(nodeId);
+                            if (check && check.online) {
+                                this.$message.success(this.checkOkText);
+                            } else {
+                                this.$warning({
+                                    title: this.checkFailedText,
+                                    content: (check && check.error) || this.pendingText,
+                                    class: themeSwitcher.currentTheme,
+                                });
+                            }
                         }
                     }
                 } finally {
@@ -397,20 +451,11 @@
             },
             handleAction(key, record) {
                 switch (key) {
-                    case 'init':
-                        this.confirmInit(record);
-                        break;
-                    case 'push':
-                        this.confirmPush(record);
-                        break;
-                    case 'merge':
-                        this.confirmMerge(record);
-                        break;
-                    case 'overwrite':
-                        this.confirmOverwrite(record);
-                        break;
                     case 'check':
                         this.checkNode(record.id);
+                        break;
+                    case 'sync':
+                        this.confirmSync(record);
                         break;
                     case 'edit':
                         this.openEdit(record);
@@ -420,96 +465,102 @@
                         break;
                 }
             },
-            confirmInit(record) {
+            confirmSync(record) {
                 this.$confirm({
-                    title: '{{ i18n "pages.nodeSync.syncInit" }}',
-                    content: '{{ i18n "pages.nodeSync.initConfirm" }}',
-                    okText: '{{ i18n "confirm" }}',
-                    cancelText: '{{ i18n "cancel" }}',
-                    class: themeSwitcher.currentTheme,
-                    onOk: () => this.runInit(record.id),
-                });
-            },
-            async runInit(id) {
-                await HttpUtil.post(`/xui/node_sync/init/${id}`, {});
-                await this.getNodes();
-            },
-            confirmPush(record) {
-                this.$confirm({
-                    title: '{{ i18n "pages.nodeSync.pushSync" }}',
-                    content: '{{ i18n "pages.nodeSync.pushConfirm" }}',
+                    title: '{{ i18n "pages.nodeSync.syncNow" }}',
+                    content: '{{ i18n "pages.nodeSync.syncConfirm" }}',
                     okText: '{{ i18n "confirm" }}',
                     cancelText: '{{ i18n "cancel" }}',
                     class: themeSwitcher.currentTheme,
                     onOk: async () => {
-                        await HttpUtil.post(`/xui/node_sync/push/${record.id}`, {});
-                        await this.getNodes();
-                    },
-                });
-            },
-            confirmMerge(record) {
-                this.$confirm({
-                    title: '{{ i18n "pages.nodeSync.mergeData" }}',
-                    content: '{{ i18n "pages.nodeSync.mergeConfirm" }}',
-                    okText: '{{ i18n "confirm" }}',
-                    cancelText: '{{ i18n "cancel" }}',
-                    class: themeSwitcher.currentTheme,
-                    onOk: async () => {
-                        const msg = await HttpUtil.post(`/xui/node_sync/merge/${record.id}`, {});
-                        if (msg.success) {
-                            const r = msg.obj || {};
-                            const summary = '{{ i18n "pages.nodeSync.mergeSummary" }}'
-                                .replace('{inbounds}', r.inbounds || 0)
-                                .replace('{outbounds}', r.outbounds || 0)
-                                .replace('{rules}', r.rules || 0)
-                                .replace('{skipped}', r.skipped || 0);
-                            this.$message.info(summary);
+                        const msg = await HttpUtil.post(`/xui/node_sync/sync/${record.id}`, {});
+                        if (msg.success && msg.obj) {
+                            this.showSyncSummary(msg.obj.items || []);
                         }
                         await this.getNodes();
                     },
                 });
             },
-            confirmOverwrite(record) {
-                this.$confirm({
-                    title: '{{ i18n "pages.nodeSync.overwriteMaster" }}',
-                    content: '{{ i18n "pages.nodeSync.overwriteConfirm" }}',
-                    okText: '{{ i18n "confirm" }}',
-                    cancelText: '{{ i18n "cancel" }}',
-                    okType: 'danger',
-                    class: themeSwitcher.currentTheme,
-                    onOk: async () => {
-                        const msg = await HttpUtil.post(`/xui/node_sync/overwrite/${record.id}`, {});
-                        if (msg.success) {
-                            const r = msg.obj || {};
-                            const summary = '{{ i18n "pages.nodeSync.overwriteSummary" }}'
-                                .replace('{inbounds}', r.inbounds || 0)
-                                .replace('{outbounds}', r.outbounds || 0)
-                                .replace('{rules}', r.routingRules || 0);
-                            this.$message.success(summary);
-                            if (r.warnings && r.warnings.length) {
-                                this.$warning({title: r.warnings.join('\n'), class: themeSwitcher.currentTheme});
-                            }
-                        }
-                        await this.getNodes();
-                    },
+            async syncAll() {
+                if (!this.hasActiveNodes) {
+                    return;
+                }
+                this.syncingAll = true;
+                try {
+                    const msg = await HttpUtil.post('/xui/node_sync/sync', {});
+                    if (msg.success && msg.obj) {
+                        this.showSyncSummary(msg.obj.items || []);
+                    }
+                    await this.getNodes();
+                } finally {
+                    this.syncingAll = false;
+                }
+            },
+            showSyncSummary(items) {
+                if (!items.length) {
+                    return;
+                }
+                const lines = [];
+                const warnings = [];
+                let needRestart = false;
+                items.forEach(item => {
+                    if (!item.success) {
+                        lines.push(`${item.remark || '#' + item.id}: ${item.message || ''}`);
+                        return;
+                    }
+                    lines.push(`${item.remark || '#' + item.id}: ${this.summaryText(item)}`);
+                    if (item.warnings && item.warnings.length) {
+                        warnings.push(...item.warnings);
+                    }
+                    if (!item.hotReload) {
+                        needRestart = true;
+                    }
                 });
+                this.$info({
+                    title: '{{ i18n "pages.nodeSync.syncDoneTitle" }}',
+                    content: lines.join('\n'),
+                    class: themeSwitcher.currentTheme,
+                });
+                if (warnings.length || needRestart) {
+                    if (needRestart) {
+                        warnings.push(this.syncNeedRestartText);
+                    }
+                    this.$warning({
+                        title: '{{ i18n "pages.nodeSync.syncWarnings" }}',
+                        content: warnings.join('\n'),
+                        class: themeSwitcher.currentTheme,
+                    });
+                }
+            },
+            summaryText(item) {
+                if (!item.changed) {
+                    return this.syncNoChangeText;
+                }
+                const parts = [];
+                Object.keys(this.kindLabels).forEach(key => {
+                    const count = item[key] || {};
+                    const added = count.added || 0;
+                    const updated = count.updated || 0;
+                    const deleted = count.deleted || 0;
+                    if (added || updated || deleted) {
+                        parts.push(`${this.kindLabels[key]} ${this.countLabels.added} ${added} ${this.countLabels.updated} ${updated} ${this.countLabels.deleted} ${deleted}`);
+                    }
+                });
+                return parts.length ? parts.join('，') : this.syncNoChangeText;
             },
             confirmDelete(record) {
                 this.$confirm({
                     title: '{{ i18n "pages.nodeSync.deleteNode" }}',
-                    content: '{{ i18n "pages.nodeSync.deleteConfirm" }}',
+                    content: record.passive
+                        ? '{{ i18n "pages.nodeSync.deletePassiveConfirm" }}'
+                        : '{{ i18n "pages.nodeSync.deleteConfirm" }}',
                     okText: '{{ i18n "confirm" }}',
                     cancelText: '{{ i18n "cancel" }}',
                     okType: 'danger',
                     class: themeSwitcher.currentTheme,
                     onOk: async () => {
-                        const msg = await HttpUtil.post(`/xui/node_sync/delete/${record.id}`, {});
-                        if (msg.success) {
-                            if (msg.obj) {
-                                this.$warning({title: msg.obj, class: themeSwitcher.currentTheme});
-                            }
-                            await this.getNodes();
-                        }
+                        await HttpUtil.post(`/xui/node_sync/delete/${record.id}`, {});
+                        await this.getNodes();
                     },
                 });
             },

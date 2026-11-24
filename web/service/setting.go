@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alireza0/x-ui/config"
@@ -32,6 +33,7 @@ var defaultValueMap = map[string]string{
 	"syncRole":           "",
 	"syncMasterName":     "",
 	"syncAutoInterval":   "0",
+	"panelUUID":          "",
 	"panelTitle":         "",
 	"sessionMaxAge":      "180",
 	"pageSize":           "50",
@@ -342,6 +344,32 @@ func (s *SettingService) GetRemarkModel() (string, error) {
 
 func (s *SettingService) GetOutboundTestUrl() (string, error) {
 	return s.getString("outboundTestUrl")
+}
+
+var panelUUIDMu sync.Mutex
+
+// GetPanelUUID returns the stable identity of this panel, generating it on
+// first use. Node sync peers exchange it to detect reinstalled or unrelated
+// panels and to break timestamp ties deterministically.
+func (s *SettingService) GetPanelUUID() (string, error) {
+	panelUUIDMu.Lock()
+	defer panelUUIDMu.Unlock()
+	value, err := s.getString("panelUUID")
+	if err != nil {
+		return "", err
+	}
+	if value != "" {
+		return value, nil
+	}
+	value = random.Seq(32)
+	if err := s.setString("panelUUID", value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func (s *SettingService) GetTimeLocationSetting() (string, error) {
+	return s.getString("timeLocation")
 }
 
 func (s *SettingService) GetSecret() ([]byte, error) {

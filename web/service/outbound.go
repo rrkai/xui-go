@@ -68,6 +68,7 @@ func (s *OutboundService) AddOutbound(outbound *model.Outbound) (*model.Outbound
 	if err != nil {
 		return outbound, false, err
 	}
+	(&SyncStateService{}).Touch(SyncKindOutbound, outbound.Tag, false)
 
 	needRestart := false
 	if p != nil && p.IsRunning() {
@@ -110,7 +111,11 @@ func (s *OutboundService) DelOutbound(id int) (bool, error) {
 		s.xrayApi.Close()
 	}
 
-	return needRestart, db.Delete(model.Outbound{}, id).Error
+	err = db.Delete(model.Outbound{}, id).Error
+	if err == nil {
+		(&SyncStateService{}).Touch(SyncKindOutbound, outbound.Tag, true)
+	}
+	return needRestart, err
 }
 
 func (s *OutboundService) UpdateOutbound(outbound *model.Outbound) (*model.Outbound, bool, error) {
@@ -160,7 +165,15 @@ func (s *OutboundService) UpdateOutbound(outbound *model.Outbound) (*model.Outbo
 	}
 
 	db := database.GetDB()
-	return outbound, needRestart, db.Save(oldOutbound).Error
+	err = db.Save(oldOutbound).Error
+	if err == nil {
+		stateService := &SyncStateService{}
+		stateService.Touch(SyncKindOutbound, oldOutbound.Tag, false)
+		if oldTag != "" && oldTag != oldOutbound.Tag {
+			stateService.Touch(SyncKindOutbound, oldTag, true)
+		}
+	}
+	return outbound, needRestart, err
 }
 
 func (s *OutboundService) SetFirstOutbound(id int) error {
@@ -169,13 +182,25 @@ func (s *OutboundService) SetFirstOutbound(id int) error {
 	if err != nil {
 		return err
 	}
-	return db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(model.Outbound{}).Where("sort < ?", outbound.Sort).
 			Update("sort", gorm.Expr("sort + 1")).Error; err != nil {
 			return err
 		}
 		return tx.Model(model.Outbound{}).Where("id = ?", id).Update("sort", 0).Error
 	})
+	if err != nil {
+		return err
+	}
+	all, err := s.GetAllOutbounds()
+	if err != nil {
+		return err
+	}
+	stateService := &SyncStateService{}
+	for _, item := range all {
+		stateService.Touch(SyncKindOutbound, item.Tag, false)
+	}
+	return nil
 }
 
 func (s *OutboundService) ResetTraffic(id int) error {

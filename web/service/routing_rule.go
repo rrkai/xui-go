@@ -62,6 +62,19 @@ func (s *RoutingRuleService) SaveAllRules(rules []*model.RoutingRule) (bool, err
 		return false, err
 	}
 
+	type ruleSnapshot struct {
+		canonical string
+		sort      int
+	}
+	oldRules, err := s.GetAllRules()
+	if err != nil {
+		return false, err
+	}
+	oldByTag := make(map[string]ruleSnapshot, len(oldRules))
+	for _, r := range oldRules {
+		oldByTag[r.Tag] = ruleSnapshot{canonical: canonicalRule(r.RawJson), sort: r.Sort}
+	}
+
 	// Validate every rule can be serialized before touching xray or the database.
 	ruleJSONs := make([][]byte, 0, len(rules))
 	for _, r := range rules {
@@ -100,7 +113,7 @@ func (s *RoutingRuleService) SaveAllRules(rules []*model.RoutingRule) (bool, err
 	}
 
 	db := database.GetDB()
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("1 = 1").Delete(&model.RoutingRule{}).Error; err != nil {
 			return err
 		}
@@ -113,6 +126,21 @@ func (s *RoutingRuleService) SaveAllRules(rules []*model.RoutingRule) (bool, err
 	})
 	if err != nil {
 		return true, err
+	}
+
+	stateService := &SyncStateService{}
+	newTags := make(map[string]bool, len(rules))
+	for _, r := range rules {
+		newTags[r.Tag] = true
+		old, ok := oldByTag[r.Tag]
+		if !ok || old.canonical != canonicalRule(r.RawJson) || old.sort != r.Sort {
+			stateService.Touch(SyncKindRule, r.Tag, false)
+		}
+	}
+	for tag := range oldByTag {
+		if !newTags[tag] {
+			stateService.Touch(SyncKindRule, tag, true)
+		}
 	}
 	return needRestart, nil
 }
@@ -139,6 +167,7 @@ func (s *RoutingRuleService) ReplaceBalancerTag(oldTag, newTag string) error {
 		if err := db.Save(r).Error; err != nil {
 			return err
 		}
+		(&SyncStateService{}).Touch(SyncKindRule, r.Tag, false)
 		changed = true
 	}
 	if !changed {

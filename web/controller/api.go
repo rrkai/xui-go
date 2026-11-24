@@ -46,6 +46,8 @@ func (a *APIController) nodeSyncApi(api *gin.RouterGroup) {
 		Handler gin.HandlerFunc
 	}{
 		{"GET", "/nodes", a.syncNodes},
+		{"POST", "/sync", a.syncPushAll},
+		{"POST", "/sync/:id", a.syncPushNode},
 		{"POST", "/push", a.syncPushAll},
 		{"POST", "/push/:id", a.syncPushNode},
 	}
@@ -56,7 +58,7 @@ func (a *APIController) nodeSyncApi(api *gin.RouterGroup) {
 }
 
 func (a *APIController) syncNodes(c *gin.Context) {
-	info, err := a.syncService.RoleInfo()
+	info, err := a.syncService.PanelInfo()
 	if err != nil {
 		jsonObj(c, nil, err)
 		return
@@ -67,26 +69,27 @@ func (a *APIController) syncNodes(c *gin.Context) {
 		return
 	}
 	jsonObj(c, gin.H{
-		"role":       info.Role,
-		"masterName": info.MasterName,
 		"version":    info.Version,
+		"panelId":    info.PanelId,
+		"timezone":   info.Timezone,
+		"serverTime": info.ServerTime,
 		"nodes":      nodes,
 	}, nil)
 }
 
 func (a *APIController) syncPushAll(c *gin.Context) {
-	result, err := a.syncService.PushNodes(0)
-	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.pushDone"), result, err)
+	result, err := a.syncService.SyncNodes(0)
+	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.synced"), result, err)
 }
 
 func (a *APIController) syncPushNode(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.pushDone"), err)
+		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.synced"), err)
 		return
 	}
-	result, err := a.syncService.PushNodes(id)
-	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.pushDone"), result, err)
+	result, err := a.syncService.SyncNodes(id)
+	jsonMsgObj(c, I18nWeb(c, "pages.nodeSync.toasts.synced"), result, err)
 }
 
 func (a *APIController) inboundApi(api *gin.RouterGroup) {
