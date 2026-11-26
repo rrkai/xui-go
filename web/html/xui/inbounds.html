@@ -311,15 +311,6 @@
                                     </a-menu>
                                 </a-dropdown>
                             </template>
-                            <template slot="port" slot-scope="text, dbInbound">
-                                <div>[[ dbInbound.port ]]</div>
-                                <a-tooltip v-if="dbInbound.speedUp > 0 || dbInbound.speedDown > 0"
-                                    :title="'↑ ' + (dbInbound.speedUp / 1000) + ' / ↓ ' + (dbInbound.speedDown / 1000) + ' Mbps'">
-                                    <a-tag style="margin:0;" color="cyan">
-                                        ↓[[ dbInbound.speedDown > 0 ? dbInbound.speedDown / 1000 : '∞' ]]/↑[[ dbInbound.speedUp > 0 ? dbInbound.speedUp / 1000 : '∞' ]]
-                                    </a-tag>
-                                </a-tooltip>
-                            </template>
                             <template slot="protocol" slot-scope="text, dbInbound">
                                 <a-tag style="margin:0;" color="purple">[[ dbInbound.protocol ]]</a-tag>
                                 <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS">
@@ -356,6 +347,12 @@
                                         <a-tag style="margin:0; padding: 0 2px;" color="green" v-if="clientCount[dbInbound.id].online.length">[[ clientCount[dbInbound.id].online.length ]]</a-tag>
                                     </a-popover>    
                                 </template>
+                            </template>
+                            <template slot="speed" slot-scope="text, dbInbound">
+                                <a-tag style="margin:0; white-space:nowrap;"
+                                    :color="dbInbound.speedUp > 0 || dbInbound.speedDown > 0 ? 'cyan' : undefined">
+                                    ↑ [[ dbInbound.speedUp / 1000 ]] / ↓ [[ dbInbound.speedDown / 1000 ]] Mbps
+                                </a-tag>
                             </template>
                             <template slot="traffic" slot-scope="text, dbInbound">
                                 <a-popover :overlay-class-name="themeSwitcher.currentTheme">
@@ -413,12 +410,6 @@
                                                 <td>{{ i18n "pages.inbounds.port" }}</td>
                                                 <td><a-tag>[[ dbInbound.port ]]</a-tag></td>
                                             </tr>
-                                            <tr v-if="dbInbound.speedUp > 0 || dbInbound.speedDown > 0">
-                                                <td>{{ i18n "pages.inbounds.speedLimit" }}</td>
-                                                <td>
-                                                    <a-tag color="cyan">↑[[ dbInbound.speedUp > 0 ? dbInbound.speedUp / 1000 : '∞' ]] / ↓[[ dbInbound.speedDown > 0 ? dbInbound.speedDown / 1000 : '∞' ]] Mbps</a-tag>
-                                                </td>
-                                            </tr>
                                             <tr v-if="clientCount[dbInbound.id]">
                                                 <td>{{ i18n "clients" }}</td>
                                                 <td>
@@ -447,6 +438,12 @@
                                                         </template>
                                                         <a-tag style="margin:0; padding: 0 2px;" color="green" v-if="clientCount[dbInbound.id].online.length">[[ clientCount[dbInbound.id].online.length ]]</a-tag>
                                                     </a-popover>                
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>{{ i18n "pages.inbounds.speedLimit" }}</td>
+                                                <td>
+                                                    <a-tag :color="dbInbound.speedUp > 0 || dbInbound.speedDown > 0 ? 'cyan' : undefined">↑ [[ dbInbound.speedUp / 1000 ]] / ↓ [[ dbInbound.speedDown / 1000 ]] Mbps</a-tag>
                                                 </td>
                                             </tr>
                                             <tr>
@@ -566,7 +563,7 @@
         title: '{{ i18n "pages.inbounds.port" }}',
         align: 'center',
         width: 64,
-        scopedSlots: { customRender: 'port' },
+        dataIndex: "port",
     }, {
         title: '{{ i18n "protocol" }}',
         align: 'left',
@@ -577,6 +574,11 @@
         align: 'left',
         width: 50,
         scopedSlots: { customRender: 'clients' },
+    }, {
+        title: '{{ i18n "pages.inbounds.speedLimit" }}',
+        align: 'center',
+        width: 110,
+        scopedSlots: { customRender: 'speed' },
     }, {
         title: '{{ i18n "pages.inbounds.traffic" }}',
         align: 'center',
