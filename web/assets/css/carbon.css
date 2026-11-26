@@ -227,6 +227,239 @@
     color: var(--cb-accent);
 }
 
+.cb-brand-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* ---- hardware information modal -------------------------------------- */
+
+.hw-modal-wrap .ant-modal {
+    max-width: calc(100vw - 24px);
+}
+
+.hw-panel {
+    min-height: 140px;
+}
+
+.hw-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px 0;
+    color: var(--cb-text-2);
+}
+
+.hw-state-error {
+    align-items: stretch;
+}
+
+.hw-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.hw-card {
+    min-width: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--cb-card-edge);
+    border-radius: 14px;
+    background: var(--cb-fill);
+}
+
+.hw-card-wide {
+    grid-column: span 2;
+}
+
+.hw-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    color: var(--cb-text);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.hw-card-title .anticon {
+    color: var(--cb-accent);
+}
+
+.hw-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.hw-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+.hw-label {
+    flex: 0 0 auto;
+    color: var(--cb-text-2);
+}
+
+.hw-value {
+    color: var(--cb-text);
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.hw-muted {
+    color: var(--cb-text-3);
+    font-size: 12px;
+}
+
+.hw-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 11.5px;
+}
+
+.hw-sub {
+    margin-top: 3px;
+    color: var(--cb-text-3);
+    font-size: 11.5px;
+    overflow-wrap: anywhere;
+}
+
+.hw-progress {
+    margin: 2px 0 4px;
+}
+
+.hw-progress .ant-progress {
+    margin: 0;
+}
+
+.hw-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--cb-text-2);
+    font-size: 11.5px;
+}
+
+.hw-temp-tag {
+    margin: 0 4px 4px 0;
+}
+
+.hw-disks {
+    display: flex;
+    flex-direction: column;
+}
+
+.hw-disk {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--cb-sep);
+}
+
+.hw-disk:first-child {
+    padding-top: 0;
+}
+
+.hw-disk:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.hw-disk-model {
+    color: var(--cb-text);
+    font-size: 12.5px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+.hw-disk-tags {
+    flex: none;
+}
+
+.hw-partitions {
+    margin-top: 10px;
+}
+
+.hw-partition-title {
+    margin: 4px 0 6px;
+    color: var(--cb-text-2);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.hw-partition {
+    padding: 8px 0;
+    border-top: 1px dashed var(--cb-sep);
+}
+
+.hw-partition:first-of-type {
+    border-top: 0;
+}
+
+.hw-partition .ant-progress {
+    margin: 4px 0 0;
+}
+
+.hw-networks {
+    display: flex;
+    flex-direction: column;
+}
+
+.hw-net {
+    padding: 9px 0;
+    border-top: 1px dashed var(--cb-sep);
+}
+
+.hw-net:first-child {
+    padding-top: 0;
+    border-top: 0;
+}
+
+.hw-net:last-child {
+    padding-bottom: 0;
+}
+
+.hw-net-name {
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+.hw-net-tag {
+    margin-left: 6px;
+    margin-right: 0;
+}
+
+.hw-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+@media (max-width: 768px) {
+    .hw-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .hw-card-wide {
+        grid-column: auto;
+    }
+
+    .hw-modal-wrap .ant-modal {
+        width: calc(100vw - 20px) !important;
+        margin: 10px auto;
+    }
+}
+
 .cb-sep-line {
     height: 1px;
     margin: 0 4px 10px;

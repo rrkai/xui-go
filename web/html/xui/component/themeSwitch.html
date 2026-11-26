@@ -1,11 +1,216 @@
 {{define "component/themeSwitchTemplate"}}
 <template>
-  <a-tooltip :title="themeSwitcher.isDarkTheme ? 'Dark Mode' : 'Light Mode'">
-    <a-icon type="bulb"
-      :theme="themeSwitcher.isDarkTheme ? 'filled' : 'outlined'"
-      style="font-size: 1rem; margin-right: .5rem;"
-      @click="themeSwitcher.toggleTheme()" />
-  </a-tooltip>
+  <span class="cb-brand-actions">
+    <a-tooltip :title="'{{ i18n "pages.hardware.button" }}'">
+      <a-icon type="hdd"
+        style="font-size: 1rem; margin-right: .25rem;"
+        @click="openHardware" />
+    </a-tooltip>
+    <a-tooltip :title="themeSwitcher.isDarkTheme ? 'Dark Mode' : 'Light Mode'">
+      <a-icon type="bulb"
+        :theme="themeSwitcher.isDarkTheme ? 'filled' : 'outlined'"
+        style="font-size: 1rem; margin-right: .5rem;"
+        @click="themeSwitcher.toggleTheme()" />
+    </a-tooltip>
+    <a-modal
+      :visible="hwVisible"
+      :title="'{{ i18n "pages.hardware.title" }}'"
+      :width="880"
+      :centered="true"
+      :class="themeSwitcher.currentTheme"
+      :mask-closable="true"
+      :destroy-on-close="true"
+      wrap-class-name="hw-modal-wrap"
+      :body-style="{ maxHeight: '68vh', overflowY: 'auto', padding: '18px 20px' }"
+      @cancel="hwVisible = false">
+      <template slot="footer">
+        <div class="hw-footer">
+          <a-button size="small" icon="reload" :loading="hwLoading" @click="loadHardware">
+            {{ i18n "pages.hardware.refresh" }}
+          </a-button>
+          <a-button size="small" type="primary" @click="hwVisible = false">
+            {{ i18n "pages.hardware.close" }}
+          </a-button>
+        </div>
+      </template>
+      <div class="hw-panel">
+        <div v-if="!hw && hwLoading" class="hw-state">
+          <a-spin />
+          <span>{{ i18n "pages.hardware.loading" }}</span>
+        </div>
+        <div v-else-if="hwError" class="hw-state hw-state-error">
+          <a-alert type="error" show-icon
+            :message="'{{ i18n "pages.hardware.loadFailed" }}'"
+            :description="hwError" />
+          <a-button size="small" type="primary" icon="reload" @click="loadHardware">
+            {{ i18n "pages.hardware.retry" }}
+          </a-button>
+        </div>
+        <div v-else-if="hw" class="hw-grid">
+          <div class="hw-card">
+            <div class="hw-card-title">
+              <a-icon type="desktop" />
+              <span>{{ i18n "pages.hardware.system" }}</span>
+            </div>
+            <div class="hw-rows">
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.hostname" }}</span>
+                <span class="hw-value">[[ hw.host.hostname || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.os" }}</span>
+                <span class="hw-value">[[ hw.host.os || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.kernel" }}</span>
+                <span class="hw-value hw-mono">[[ hw.host.kernel || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.arch" }}</span>
+                <span class="hw-value">[[ hw.host.arch || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.virtualization" }}</span>
+                <span class="hw-value">[[ hw.host.virtualization || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.uptime" }}</span>
+                <span class="hw-value">[[ fmtUptime(hw.host.uptime) ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.bootTime" }}</span>
+                <span class="hw-value">[[ fmtTime(hw.host.bootTime) ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.processes" }}</span>
+                <span class="hw-value">[[ hw.host.processes || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.load" }}</span>
+                <span class="hw-value hw-mono">[[ fmtLoad(hw.load) ]]</span></div>
+            </div>
+          </div>
+
+          <div class="hw-card">
+            <div class="hw-card-title">
+              <a-icon type="cluster" />
+              <span>{{ i18n "pages.hardware.board" }}</span>
+            </div>
+            <div v-if="boardHasData" class="hw-rows">
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.vendor" }}</span>
+                <span class="hw-value">[[ hw.board.vendor || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.product" }}</span>
+                <span class="hw-value">[[ hw.board.product || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.boardModel" }}</span>
+                <span class="hw-value">[[ joinText(hw.board.boardVendor, hw.board.boardName) ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.bios" }}</span>
+                <span class="hw-value">[[ joinText(hw.board.biosVendor, hw.board.biosVersion) ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.biosDate" }}</span>
+                <span class="hw-value">[[ hw.board.biosDate || '—' ]]</span></div>
+            </div>
+            <div v-else class="hw-muted">{{ i18n "pages.hardware.noData" }}</div>
+          </div>
+
+          <div class="hw-card">
+            <div class="hw-card-title">
+              <a-icon type="thunderbolt" />
+              <span>{{ i18n "pages.hardware.cpu" }}</span>
+            </div>
+            <div class="hw-rows">
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.cpuModel" }}</span>
+                <span class="hw-value">[[ hw.cpu.model || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.cpuVendor" }}</span>
+                <span class="hw-value">[[ hw.cpu.vendor || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.cores" }}</span>
+                <span class="hw-value">[[ hw.cpu.physicalCores || '—' ]] / [[ hw.cpu.logicalCores || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.frequency" }}</span>
+                <span class="hw-value">[[ fmtMhz(hw.cpu.mhz) ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.cache" }}</span>
+                <span class="hw-value">[[ fmtCache(hw.cpu.cacheKB) ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.microcode" }}</span>
+                <span class="hw-value hw-mono">[[ hw.cpu.microcode || '—' ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.temperature" }}</span>
+                <span class="hw-value">
+                  <span v-if="!hw.temps.length" class="hw-muted">—</span>
+                  <a-tag v-for="temp in hw.temps" :key="temp.name" class="hw-temp-tag">[[ temp.name ]] [[ temp.temp.toFixed(1) ]]°C</a-tag>
+                </span></div>
+            </div>
+          </div>
+
+          <div class="hw-card">
+            <div class="hw-card-title">
+              <a-icon type="database" />
+              <span>{{ i18n "pages.hardware.memory" }}</span>
+            </div>
+            <div class="hw-rows">
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.total" }}</span>
+                <span class="hw-value">[[ fmtBytes(hw.memory.total) ]]</span></div>
+              <div class="hw-progress">
+                <a-progress :percent="memPercent()" :show-info="false" :stroke-width="6"
+                  :stroke-color="usageColor(memPercent())" :trail-color="trailColor()" />
+                <div class="hw-progress-meta">
+                  <span>{{ i18n "pages.hardware.used" }} [[ fmtBytes(hw.memory.used) ]]</span>
+                  <span>{{ i18n "pages.hardware.available" }} [[ fmtBytes(hw.memory.available) ]]</span>
+                </div>
+              </div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.cached" }}</span>
+                <span class="hw-value">[[ fmtBytes(hw.memory.cached) ]]</span></div>
+              <div class="hw-row"><span class="hw-label">{{ i18n "pages.hardware.swap" }}</span>
+                <span class="hw-value" v-if="hw.memory.swapTotal > 0">
+                  [[ fmtBytes(hw.memory.swapUsed) ]] / [[ fmtBytes(hw.memory.swapTotal) ]]
+                </span>
+                <span class="hw-value" v-else>{{ i18n "pages.hardware.notEnabled" }}</span></div>
+              <div v-if="hw.memory.swapTotal > 0" class="hw-progress">
+                <a-progress :percent="swapPercent()" :show-info="false" :stroke-width="6"
+                  :stroke-color="usageColor(swapPercent())" :trail-color="trailColor()" />
+              </div>
+            </div>
+          </div>
+
+          <div class="hw-card hw-card-wide">
+            <div class="hw-card-title">
+              <a-icon type="hdd" />
+              <span>{{ i18n "pages.hardware.storage" }}</span>
+            </div>
+            <div v-if="hw.disks.length" class="hw-disks">
+              <div v-for="disk in hw.disks" :key="disk.name" class="hw-disk">
+                <div class="hw-disk-main">
+                  <div class="hw-disk-model">[[ disk.model || disk.name ]]</div>
+                  <div class="hw-sub hw-mono">[[ disk.model ? disk.name + ' · ' : '' ]][[ fmtBytes(disk.size) ]]</div>
+                </div>
+                <div class="hw-disk-tags">
+                  <a-tag v-if="disk.virtual">{{ i18n "pages.hardware.virtualDisk" }}</a-tag>
+                  <a-tag v-else-if="disk.rotational === false" color="blue">{{ i18n "pages.hardware.ssd" }}</a-tag>
+                  <a-tag v-else color="purple">{{ i18n "pages.hardware.hdd" }}</a-tag>
+                </div>
+              </div>
+            </div>
+            <div v-else class="hw-muted">{{ i18n "pages.hardware.noData" }}</div>
+            <div v-if="hw.partitions.length" class="hw-partitions">
+              <div class="hw-partition-title">{{ i18n "pages.hardware.partitions" }}</div>
+              <div v-for="part in hw.partitions" :key="part.mountpoint + part.device" class="hw-partition">
+                <div class="hw-row">
+                  <span class="hw-label hw-mono">[[ part.mountpoint ]]</span>
+                  <span class="hw-value">[[ fmtBytes(part.used) ]] / [[ fmtBytes(part.total) ]]</span>
+                </div>
+                <a-progress :percent="clampPercent(part.usedPercent)" :show-info="false" :stroke-width="5"
+                  :stroke-color="usageColor(part.usedPercent)" :trail-color="trailColor()" />
+                <div class="hw-sub hw-mono">[[ part.device ]] · [[ part.fstype ]]</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="hw-card hw-card-wide">
+            <div class="hw-card-title">
+              <a-icon type="global" />
+              <span>{{ i18n "pages.hardware.network" }}</span>
+            </div>
+            <div v-if="hw.networks.length" class="hw-networks">
+              <div v-for="net in hw.networks" :key="net.name" class="hw-net">
+                <div class="hw-row">
+                  <span class="hw-label">
+                    <strong class="hw-net-name">[[ net.name ]]</strong>
+                    <a-tag v-if="net.up" color="green" class="hw-net-tag">{{ i18n "pages.hardware.up" }}</a-tag>
+                    <a-tag v-else class="hw-net-tag">{{ i18n "pages.hardware.down" }}</a-tag>
+                  </span>
+                  <span class="hw-value">[[ fmtSpeed(net.speedMbps) ]]</span>
+                </div>
+                <div class="hw-sub hw-mono">
+                  MAC [[ net.mac || '—' ]] · MTU [[ net.mtu || '—' ]]
+                </div>
+                <div v-for="ip in net.ipv4" :key="net.name + ip" class="hw-sub hw-mono">IPv4 [[ ip ]]</div>
+                <div v-for="ip in net.ipv6" :key="net.name + ip" class="hw-sub hw-mono">IPv6 [[ ip ]]</div>
+              </div>
+            </div>
+            <div v-else class="hw-muted">{{ i18n "pages.hardware.noData" }}</div>
+          </div>
+        </div>
+      </div>
+    </a-modal>
+  </span>
 </template>
 {{end}}
 
@@ -34,8 +239,111 @@
   {{template "component/themeSwitcherCore" .}}
   Vue.component('theme-switch', {
     props: [],
-    template: `{{template "component/themeSwitchTemplate"}}`,
-    data: () => ({ themeSwitcher }),
+    delimiters: ['[[', ']]'],
+    template: `{{template "component/themeSwitchTemplate" .}}`,
+    data: () => ({
+      themeSwitcher,
+      hwVisible: false,
+      hwLoading: false,
+      hwError: '',
+      hw: null,
+    }),
+    computed: {
+      boardHasData() {
+        const board = this.hw && this.hw.board;
+        return !!(board && (board.vendor || board.product || board.boardName || board.biosVersion));
+      },
+    },
+    methods: {
+      openHardware() {
+        this.hwVisible = true;
+        this.loadHardware();
+      },
+      async loadHardware() {
+        this.hwLoading = true;
+        this.hwError = '';
+        try {
+          const msg = await HttpUtil.get('/server/hardware');
+          if (msg && msg.success) {
+            this.hw = msg.obj;
+          } else {
+            this.hwError = (msg && msg.msg) || '{{ i18n "pages.hardware.loadFailed" }}';
+          }
+        } catch (e) {
+          this.hwError = String(e);
+        }
+        this.hwLoading = false;
+      },
+      fmtBytes(bytes) {
+        let value = Number(bytes) || 0;
+        const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+        let index = 0;
+        while (value >= 1024 && index < units.length - 1) {
+          value /= 1024;
+          index += 1;
+        }
+        const digits = value >= 100 ? 0 : (value >= 10 ? 1 : 2);
+        return value.toFixed(digits) + ' ' + units[index];
+      },
+      fmtUptime(seconds) {
+        const total = Number(seconds) || 0;
+        if (total <= 0) return '—';
+        const days = Math.floor(total / 86400);
+        const hours = Math.floor((total % 86400) / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        if (days > 0) return days + 'd ' + hours + 'h ' + minutes + 'm';
+        if (hours > 0) return hours + 'h ' + minutes + 'm';
+        return minutes + 'm';
+      },
+      fmtTime(timestamp) {
+        const value = Number(timestamp) || 0;
+        if (value <= 0) return '—';
+        return new Date(value * 1000).toLocaleString();
+      },
+      fmtMhz(mhz) {
+        const value = Number(mhz) || 0;
+        return value > 0 ? Math.round(value) + ' MHz' : '—';
+      },
+      fmtCache(cacheKB) {
+        const value = Number(cacheKB) || 0;
+        if (value <= 0) return '—';
+        if (value >= 1024) return (value / 1024).toFixed(1) + ' MB';
+        return value + ' KB';
+      },
+      fmtLoad(loads) {
+        if (!Array.isArray(loads) || loads.length < 3) return '—';
+        return loads.map(function (item) { return Number(item).toFixed(2); }).join(' / ');
+      },
+      fmtSpeed(mbps) {
+        const value = Number(mbps) || 0;
+        return value > 0 ? value + ' Mbps' : '—';
+      },
+      joinText(first, second) {
+        return [first, second].filter(function (item) { return item; }).join(' ') || '—';
+      },
+      memPercent() {
+        const memory = this.hw && this.hw.memory;
+        if (!memory || !memory.total) return 0;
+        return Math.min(100, Math.round((memory.used / memory.total) * 1000) / 10);
+      },
+      swapPercent() {
+        const memory = this.hw && this.hw.memory;
+        if (!memory || !memory.swapTotal) return 0;
+        return Math.min(100, Math.round((memory.swapUsed / memory.swapTotal) * 1000) / 10);
+      },
+      clampPercent(value) {
+        const percent = Number(value) || 0;
+        return Math.max(0, Math.min(100, percent));
+      },
+      usageColor(percent) {
+        if (percent >= 90) return 'var(--cb-red)';
+        if (percent >= 70) return 'var(--cb-orange)';
+        return 'var(--cb-accent)';
+      },
+      trailColor() {
+        return this.themeSwitcher.isDarkTheme ? 'rgba(255,255,255,.08)' : 'rgba(15,23,42,.06)';
+      },
+    },
     mounted() {
       this.$message.config({getContainer: () => document.getElementById('message')});
       document.getElementById('message').className = themeSwitcher.currentTheme;

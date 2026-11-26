@@ -44,6 +44,7 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 
 	g.Use(a.checkLogin)
 	g.GET("/status", a.status)
+	g.GET("/hardware", a.hardware)
 	g.GET("/trafficRank", a.trafficRank)
 	g.GET("/clientExpiry", a.clientExpiry)
 	g.GET("/remainingTraffic", a.remainingTraffic)
@@ -135,6 +136,11 @@ func (a *ServerController) status(c *gin.Context) {
 	a.lastGetStatusTime = time.Now()
 
 	jsonObj(c, a.lastStatus, nil)
+}
+
+func (a *ServerController) hardware(c *gin.Context) {
+	info, err := a.serverService.GetHardwareInfo()
+	jsonObj(c, info, err)
 }
 
 func (a *ServerController) trafficRank(c *gin.Context) {
