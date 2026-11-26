@@ -434,6 +434,7 @@
                                                     <a-select-option value="local">{{ i18n "pages.settings.autoBackupTypeLocal" }}</a-select-option>
                                                     <a-select-option value="webdav">{{ i18n "pages.settings.autoBackupTypeWebdav" }}</a-select-option>
                                                     <a-select-option value="ftp">{{ i18n "pages.settings.autoBackupTypeFtp" }}</a-select-option>
+                                                    <a-select-option value="s3">{{ i18n "pages.settings.autoBackupTypeS3" }}</a-select-option>
                                                 </a-select>
                                             </a-col>
                                         </a-row>
@@ -487,6 +488,36 @@
                                             title='{{ i18n "pages.settings.autoBackupFtpDir" }}'
                                             desc='{{ i18n "pages.settings.autoBackupFtpDirDesc" }}'
                                             v-model="allSetting.backupFtpDir"></setting-list-item>
+                                    </template>
+                                    <template v-if="backupTypes.includes('s3')">
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupS3Endpoint" }}'
+                                            desc='{{ i18n "pages.settings.autoBackupS3EndpointDesc" }}'
+                                            v-model="allSetting.backupS3Endpoint"></setting-list-item>
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupS3Region" }}'
+                                            desc='{{ i18n "pages.settings.autoBackupS3RegionDesc" }}'
+                                            v-model="allSetting.backupS3Region"></setting-list-item>
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupS3Bucket" }}'
+                                            v-model="allSetting.backupS3Bucket"></setting-list-item>
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupS3Prefix" }}'
+                                            desc='{{ i18n "pages.settings.autoBackupS3PrefixDesc" }}'
+                                            v-model="allSetting.backupS3Prefix"></setting-list-item>
+                                        <setting-list-item type="text"
+                                            title='{{ i18n "pages.settings.autoBackupS3AccessKey" }}'
+                                            v-model="allSetting.backupS3AccessKey"></setting-list-item>
+                                        <a-list-item style="padding: 20px">
+                                            <a-row>
+                                                <a-col :lg="24" :xl="12">
+                                                    <a-list-item-meta title='{{ i18n "pages.settings.autoBackupS3SecretKey" }}'/>
+                                                </a-col>
+                                                <a-col :lg="24" :xl="12">
+                                                    <password-input v-model="allSetting.backupS3SecretKey"></password-input>
+                                                </a-col>
+                                            </a-row>
+                                        </a-list-item>
                                     </template>
                                 </a-list>
                             </a-tab-pane>

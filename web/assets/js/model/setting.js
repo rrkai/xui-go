@@ -51,6 +51,12 @@ class AllSetting {
         this.backupFtpUser = "";
         this.backupFtpPass = "";
         this.backupFtpDir = "/";
+        this.backupS3Endpoint = "";
+        this.backupS3Region = "us-east-1";
+        this.backupS3Bucket = "";
+        this.backupS3AccessKey = "";
+        this.backupS3SecretKey = "";
+        this.backupS3Prefix = "";
 
         this.timeLocation = "Asia/Hong_Kong";
 

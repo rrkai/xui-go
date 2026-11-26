@@ -69,6 +69,12 @@ type AllSetting struct {
 	BackupFtpUser      string `json:"backupFtpUser" form:"backupFtpUser"`
 	BackupFtpPass      string `json:"backupFtpPass" form:"backupFtpPass"`
 	BackupFtpDir       string `json:"backupFtpDir" form:"backupFtpDir"`
+	BackupS3Endpoint   string `json:"backupS3Endpoint" form:"backupS3Endpoint"`
+	BackupS3Region     string `json:"backupS3Region" form:"backupS3Region"`
+	BackupS3Bucket     string `json:"backupS3Bucket" form:"backupS3Bucket"`
+	BackupS3AccessKey  string `json:"backupS3AccessKey" form:"backupS3AccessKey"`
+	BackupS3SecretKey  string `json:"backupS3SecretKey" form:"backupS3SecretKey"`
+	BackupS3Prefix     string `json:"backupS3Prefix" form:"backupS3Prefix"`
 }
 
 func (s *AllSetting) CheckValid() error {
@@ -156,6 +162,9 @@ func (s *AllSetting) CheckValid() error {
 	if s.BackupFtpDir == "" {
 		s.BackupFtpDir = "/"
 	}
+	if s.BackupS3Region == "" {
+		s.BackupS3Region = "us-east-1"
+	}
 
 	if _, err := time.Parse("15:04", s.BackupTime); err != nil {
 		return common.NewError("backup time is not valid, expected HH:MM:", s.BackupTime)
@@ -194,6 +203,20 @@ func (s *AllSetting) CheckValid() error {
 			}
 			if s.BackupFtpPort <= 0 || s.BackupFtpPort > 65535 {
 				return common.NewError("backup FTP port is not valid:", s.BackupFtpPort)
+			}
+		case "s3":
+			u, err := url.Parse(strings.TrimSpace(s.BackupS3Endpoint))
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return common.NewError("backup S3 endpoint is not valid:", s.BackupS3Endpoint)
+			}
+			if strings.Trim(u.Path, "/") != "" {
+				return common.NewError("backup S3 endpoint must not contain a path:", s.BackupS3Endpoint)
+			}
+			if strings.TrimSpace(s.BackupS3Bucket) == "" {
+				return common.NewError("backup S3 bucket is required")
+			}
+			if strings.TrimSpace(s.BackupS3AccessKey) == "" || strings.TrimSpace(s.BackupS3SecretKey) == "" {
+				return common.NewError("backup S3 access key and secret key are required")
 			}
 		default:
 			return common.NewError("backup type is not valid:", backupType)

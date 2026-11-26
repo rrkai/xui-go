@@ -32,6 +32,7 @@
 - 入站 / 出站列表分页与全字段搜索（tag、协议、地址、端口、settings / streamSettings 内容）
 - 订阅服务（多链接）、客户端流量与到期限制、按首次使用时间起算、IP 限制（nftables，仅 Linux）
 - 用户证书：菜单“用户证书”集中放置面板安全证书与用户密码修改两个页卡；面板设置只保留常规配置、TG 提醒、订阅与自动备份
+- 自动备份：本地目录 / WebDAV / FTP / S3 兼容存储（Cloudflare R2、Backblaze B2、MinIO、阿里云 OSS、AWS S3，SigV4），按保留数量自动清理旧备份
 - Telegram 机器人：定时报表、登录通知、负载告警、客户端查询、数据库备份
 
 ### 运维与更新
@@ -418,6 +419,7 @@ INFO - sqlite: cache_size= -16000  source= auto  memory_limit_mb= 3921
 ### 备份与导入
 
 - 请使用面板的“导出数据库”：导出前会执行 `wal_checkpoint(TRUNCATE)`，确保备份完整。
+- 自动备份支持本地目录、WebDAV、FTP 和 S3 兼容存储；S3 需填 Endpoint、Region、Bucket、Access Key、Secret Key，可选对象前缀。AWS 自动使用虚拟主机寻址，R2 / B2 / MinIO / OSS 使用路径寻址。
 - 不要直接复制正在运行的 `x-ui.db`：最新数据可能还在 `-wal` 文件中。
 - 导入会整库替换，并自动清理旧 `-wal/-shm`、执行迁移、补建索引；导入的 settings（时区、TG 语言、分页大小等）会随备份恢复，导入后按需调整。
 - SQLite 调优参数由程序在启动时施加，不存储在数据库文件中，导入其他数据库不会覆盖这些参数。

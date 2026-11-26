@@ -151,6 +151,11 @@ func (s *AutoBackupService) createBackup(name string) error {
 				logger.Warning("auto backup: upload FTP failed:", err)
 				errs = append(errs, err)
 			}
+		case "s3":
+			if err := s.uploadS3(tmp, name, retention); err != nil {
+				logger.Warning("auto backup: upload S3 failed:", err)
+				errs = append(errs, err)
+			}
 		default:
 			errs = append(errs, fmt.Errorf("unknown backup type: %s", targetType))
 		}

@@ -81,6 +81,12 @@ var defaultValueMap = map[string]string{
 	"backupFtpUser":      "",
 	"backupFtpPass":      "",
 	"backupFtpDir":       "/",
+	"backupS3Endpoint":   "",
+	"backupS3Region":     "us-east-1",
+	"backupS3Bucket":     "",
+	"backupS3AccessKey":  "",
+	"backupS3SecretKey":  "",
+	"backupS3Prefix":     "",
 	"backupLastRun":      "",
 }
 
@@ -556,6 +562,30 @@ func (s *SettingService) GetBackupFtpPass() (string, error) {
 
 func (s *SettingService) GetBackupFtpDir() (string, error) {
 	return s.getString("backupFtpDir")
+}
+
+func (s *SettingService) GetBackupS3Endpoint() (string, error) {
+	return s.getString("backupS3Endpoint")
+}
+
+func (s *SettingService) GetBackupS3Region() (string, error) {
+	return s.getString("backupS3Region")
+}
+
+func (s *SettingService) GetBackupS3Bucket() (string, error) {
+	return s.getString("backupS3Bucket")
+}
+
+func (s *SettingService) GetBackupS3AccessKey() (string, error) {
+	return s.getString("backupS3AccessKey")
+}
+
+func (s *SettingService) GetBackupS3SecretKey() (string, error) {
+	return s.getString("backupS3SecretKey")
+}
+
+func (s *SettingService) GetBackupS3Prefix() (string, error) {
+	return s.getString("backupS3Prefix")
 }
 
 func (s *SettingService) GetBackupLastRun() (string, error) {
