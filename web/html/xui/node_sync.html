@@ -95,6 +95,10 @@
         font-size: 12px;
         opacity: .6;
     }
+    .node-sync-name {
+        margin-right: 6px;
+        font-weight: 600;
+    }
     .node-sync-via {
         display: block;
         margin-top: 2px;
@@ -148,8 +152,9 @@
                     </div>
                 </a-card>
                 <a-card>
-                    <a-table :columns="columns" :data-source="tableNodes" row-key="key"
-                             :pagination="false" :scroll="{x: 1320}"
+                    <a-table :key="tableKey" :columns="columns" :data-source="tableNodes" row-key="key"
+                             :pagination="false" :default-expand-all-rows="true" :indent-size="18"
+                             :scroll="{x: 900}"
                              :locale="{emptyText: '{{ i18n "pages.nodeSync.empty" }}'}">
                         <span slot="order" slot-scope="text, record">
                             <a-button-group v-if="record.rowType === 'direct' || record.rowType === 'passive'"
@@ -159,20 +164,16 @@
                             </a-button-group>
                             <span v-else class="node-sync-auto-hint">—</span>
                         </span>
-                        <span slot="type" slot-scope="text, record">
+                        <span slot="node" slot-scope="text, record">
+                            <span class="node-sync-name">[[ record.peerTitle || '—' ]]</span>
                             <a-tag v-if="record.rowType === 'self'" color="green">[[ selfTag ]]</a-tag>
                             <a-tag v-else-if="record.rowType === 'passive'" color="blue">[[ passiveTypeTag ]]</a-tag>
-                            <a-tag v-else-if="record.rowType === 'indirect'">[[ indirectTag ]]</a-tag>
+                            <a-tooltip v-else-if="record.rowType === 'indirect'" :title="indirectVia(record)">
+                                <a-tag>[[ indirectTag ]]</a-tag>
+                            </a-tooltip>
                             <a-tag v-else color="cyan">[[ directTag ]]</a-tag>
-                            <span v-if="record.rowType === 'indirect'" class="node-sync-via">[[ indirectVia(record) ]]</span>
-                        </span>
-                        <span slot="remark" slot-scope="text, record">
-                            <span v-if="record.rowType === 'self' || record.rowType === 'indirect'" class="node-sync-auto-hint">—</span>
-                            <span v-else>[[ text || '#' + record.id ]]</span>
-                        </span>
-                        <span slot="hostname" slot-scope="text">
-                            <span v-if="text">[[ text ]]</span>
-                            <span v-else class="node-sync-auto-hint">—</span>
+                            <span v-if="(record.rowType === 'direct' || record.rowType === 'passive') && record.remark"
+                                  class="node-sync-via">[[ record.remark ]]</span>
                         </span>
                         <span slot="address" slot-scope="text, record">
                             <span v-if="text" class="node-sync-address">[[ text ]]</span>
@@ -307,6 +308,7 @@
             zoneName: '',
             nodes: [],
             lineNodes: [],
+            tableKey: 0,
             nodeChecks: {},
             syncingAll: false,
             checkingText: '{{ i18n "pages.nodeSync.statusChecking" }}',
@@ -386,14 +388,12 @@
                 passwordKeep: '{{ i18n "pages.nodeSync.passwordKeep" }}',
             },
             columns: [
-                { title: '{{ i18n "pages.nodeSync.order" }}', width: 90, scopedSlots: { customRender: 'order' } },
-                { title: '{{ i18n "pages.nodeSync.type" }}', width: 120, scopedSlots: { customRender: 'type' } },
-                { title: '{{ i18n "pages.nodeSync.remark" }}', dataIndex: 'remark', width: 160, scopedSlots: { customRender: 'remark' } },
-                { title: '{{ i18n "pages.nodeSync.hostname" }}', dataIndex: 'peerTitle', width: 160, scopedSlots: { customRender: 'hostname' } },
-                { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 240, scopedSlots: { customRender: 'address' } },
-                { title: '{{ i18n "pages.nodeSync.status" }}', width: 180, scopedSlots: { customRender: 'status' } },
-                { title: '{{ i18n "pages.nodeSync.lastSync" }}', dataIndex: 'lastSync', width: 160, scopedSlots: { customRender: 'lastSync' } },
-                { title: '{{ i18n "pages.nodeSync.operate" }}', width: 190, scopedSlots: { customRender: 'actions' } },
+                { title: '{{ i18n "pages.nodeSync.node" }}', dataIndex: 'peerTitle', width: 220, scopedSlots: { customRender: 'node' } },
+                { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 180, scopedSlots: { customRender: 'address' } },
+                { title: '{{ i18n "pages.nodeSync.status" }}', width: 130, scopedSlots: { customRender: 'status' } },
+                { title: '{{ i18n "pages.nodeSync.lastSync" }}', dataIndex: 'lastSync', width: 130, scopedSlots: { customRender: 'lastSync' } },
+                { title: '{{ i18n "pages.nodeSync.order" }}', width: 70, scopedSlots: { customRender: 'order' } },
+                { title: '{{ i18n "pages.nodeSync.operate" }}', width: 170, scopedSlots: { customRender: 'actions' } },
             ],
             modal: {
                 visible: false,
@@ -411,9 +411,10 @@
                 return this.nodes.some(node => !node.passive);
             },
             tableNodes() {
-                const rows = [{
+                const selfRow = {
                     key: 'self',
                     rowType: 'self',
+                    panelId: this.panelId,
                     id: 0,
                     remark: '',
                     peerTitle: this.panelTitle || this.selfTag,
@@ -421,17 +422,23 @@
                     passive: false,
                     ready: true,
                     lastSyncText: '',
-                }];
+                    children: [],
+                };
+                const directRows = {};
                 this.nodes.forEach(node => {
-                    rows.push(Object.assign({}, node, {
+                    directRows[node.peerId] = Object.assign({}, node, {
                         key: 'node-' + node.id,
                         rowType: node.passive ? 'passive' : 'direct',
-                    }));
+                        panelId: node.peerId,
+                        children: [],
+                    });
                 });
+                const lineRows = {};
                 this.lineNodes.forEach(node => {
-                    rows.push({
+                    lineRows[node.panelId] = {
                         key: 'line-' + node.panelId,
                         rowType: 'indirect',
+                        panelId: node.panelId,
                         id: 0,
                         remark: '',
                         peerTitle: node.title || node.panelId,
@@ -441,9 +448,39 @@
                         passive: false,
                         ready: true,
                         lastSyncText: '',
-                    });
+                        children: [],
+                    };
                 });
-                return rows;
+                const lineChildren = {};
+                this.lineNodes.forEach(node => {
+                    const row = lineRows[node.panelId];
+                    const parent = directRows[node.viaPanelId] || lineRows[node.viaPanelId];
+                    if (parent && parent !== row) {
+                        if (!lineChildren[node.viaPanelId]) {
+                            lineChildren[node.viaPanelId] = [];
+                        }
+                        lineChildren[node.viaPanelId].push(row);
+                    }
+                });
+                const used = {};
+                const attach = row => {
+                    if (!row || used[row.key]) {
+                        return null;
+                    }
+                    used[row.key] = true;
+                    row.children = (lineChildren[row.panelId] || []).map(attach).filter(Boolean);
+                    if (!row.children.length) {
+                        delete row.children;
+                    }
+                    return row;
+                };
+                const direct = this.nodes.map(node => attach(directRows[node.peerId])).filter(Boolean);
+                const rest = this.lineNodes.map(node => attach(lineRows[node.panelId])).filter(Boolean);
+                selfRow.children = direct.concat(rest);
+                if (!selfRow.children.length) {
+                    delete selfRow.children;
+                }
+                return [selfRow];
             },
         },
         methods: {
@@ -461,6 +498,7 @@
                         this.zoneName = msg.obj.zoneName || '';
                         this.nodes = msg.obj.nodes || [];
                         this.lineNodes = msg.obj.lineNodes || [];
+                        this.tableKey++;
                         this.autoEnabled = (msg.obj.autoInterval || 0) > 0;
                         this.autoInterval = this.autoEnabled ? msg.obj.autoInterval : 5;
                         this.refreshChecks();
