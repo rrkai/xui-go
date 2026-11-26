@@ -143,7 +143,7 @@
                 </a-card>
                 <a-card>
                     <a-table :columns="columns" :data-source="nodes" row-key="id"
-                             :pagination="false" :scroll="{x: 1200}"
+                             :pagination="false" :scroll="{x: 1320}"
                              :locale="{emptyText: '{{ i18n "pages.nodeSync.empty" }}'}">
                         <span slot="order" slot-scope="text, record, index">
                             <a-button-group size="small" class="node-sync-order">
@@ -151,9 +151,11 @@
                                 <a-button icon="arrow-down" :disabled="index === nodes.length - 1" @click="move(record, 'down')"></a-button>
                             </a-button-group>
                         </span>
+                        <span slot="nodeType" slot-scope="text, record">
+                            <a-tag :color="record.passive ? 'blue' : 'green'">[[ record.passive ? passiveText : downstreamText ]]</a-tag>
+                        </span>
                         <span slot="remark" slot-scope="text, record">
                             <span>[[ text || '#' + record.id ]]</span>
-                            <a-tag v-if="record.passive" color="blue" style="margin-left: 6px;">[[ passiveText ]]</a-tag>
                         </span>
                         <span slot="hostname" slot-scope="text">
                             <span v-if="text">[[ text ]]</span>
@@ -165,7 +167,7 @@
                         </span>
                         <span slot="status" slot-scope="text, record">
                             <template v-if="record.passive">
-                                <a-tag color="blue">[[ passiveText ]]</a-tag>
+                                <span class="node-sync-auto-hint">—</span>
                             </template>
                             <template v-else-if="nodeChecks[record.id]">
                                 <a-tag v-if="nodeChecks[record.id].loading" color="blue">[[ checkingText ]]</a-tag>
@@ -279,6 +281,7 @@
             syncingAll: false,
             checkingText: '{{ i18n "pages.nodeSync.statusChecking" }}',
             passiveText: '{{ i18n "pages.nodeSync.passiveTag" }}',
+            downstreamText: '{{ i18n "pages.nodeSync.downstreamTag" }}',
             readyText: '{{ i18n "pages.nodeSync.statusReady" }}',
             pendingText: '{{ i18n "pages.nodeSync.statusPending" }}',
             neverText: '{{ i18n "pages.nodeSync.never" }}',
@@ -347,6 +350,7 @@
             },
             columns: [
                 { title: '{{ i18n "pages.nodeSync.order" }}', width: 90, scopedSlots: { customRender: 'order' } },
+                { title: '{{ i18n "pages.nodeSync.nodeType" }}', width: 110, scopedSlots: { customRender: 'nodeType' } },
                 { title: '{{ i18n "pages.nodeSync.remark" }}', dataIndex: 'remark', width: 160, scopedSlots: { customRender: 'remark' } },
                 { title: '{{ i18n "pages.nodeSync.hostname" }}', dataIndex: 'peerTitle', width: 160, scopedSlots: { customRender: 'hostname' } },
                 { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 240, scopedSlots: { customRender: 'address' } },

@@ -662,7 +662,7 @@ func (s *NodeSyncService) UpdateNode(id int, remark, address, username, password
 
 	if credentialsChanged {
 		if node.Passive {
-			return nil, common.NewError("被动对端没有登录凭据，不能编辑地址或账号")
+			return nil, common.NewError("上级对端没有登录凭据，不能编辑地址或账号")
 		}
 		effectivePassword, err := decryptSyncPassword(node.Password)
 		if err != nil {
@@ -805,7 +805,7 @@ func (s *NodeSyncService) CheckNode(id int) (*SyncNodeCheck, error) {
 	result := &SyncNodeCheck{Passive: node.Passive, Ready: node.Ready}
 	if node.Passive {
 		result.Kind = SyncCheckAddress
-		result.Error = "被动对端由对方发起同步，不能主动检查"
+		result.Error = "上级对端由对方发起同步，不能主动检查"
 		return result, nil
 	}
 	password, err := decryptSyncPassword(node.Password)
@@ -941,7 +941,7 @@ func (s *NodeSyncService) AlignNodeTimezone(id int) (*SyncTimezoneResult, error)
 		return nil, err
 	}
 	if node.Passive {
-		return nil, common.NewError("被动对端由对方发起同步，不能主动修改对端时区")
+		return nil, common.NewError("上级对端由对方发起同步，不能主动修改对端时区")
 	}
 	password, err := decryptSyncPassword(node.Password)
 	if err != nil {
@@ -1083,7 +1083,7 @@ func (s *NodeSyncService) SyncNodes(id int) (*SyncBatchResult, error) {
 			return nil, err
 		}
 		if node.Passive {
-			return nil, common.NewError("被动对端由对方发起同步，不能主动同步")
+			return nil, common.NewError("上级对端由对方发起同步，不能主动同步")
 		}
 		if !node.Ready || node.PeerId == "" {
 			return nil, common.NewError("请先检查对端后再同步")
@@ -1157,7 +1157,7 @@ func (s *NodeSyncService) syncPeerOnce(id int) (*SyncPeerResult, error) {
 		return nil, err
 	}
 	if node.Passive {
-		return nil, common.NewError("被动对端不能主动同步")
+		return nil, common.NewError("上级对端不能主动同步")
 	}
 	if !node.Ready || node.PeerId == "" {
 		return nil, common.NewError("请先检查对端后再同步")
@@ -1418,7 +1418,7 @@ func syncPassiveRemark(payload *SyncPayload) string {
 	if title != "" {
 		return title
 	}
-	return "被动对端"
+	return "上级对端"
 }
 
 func sanitizeSyncAddress(address string) string {
