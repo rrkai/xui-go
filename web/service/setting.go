@@ -425,6 +425,14 @@ func (s *SettingService) SetPanelTitle(title string) error {
 	return s.setString("panelTitle", title)
 }
 
+func (s *SettingService) GetSyncPanelAddress() (string, error) {
+	return s.getString("syncPanelAddress")
+}
+
+func (s *SettingService) SetSyncPanelAddress(address string) error {
+	return s.setString("syncPanelAddress", address)
+}
+
 func (s *SettingService) GetSyncRole() (string, error) {
 	return s.getString("syncRole")
 }

@@ -16,6 +16,7 @@ const (
 	VersionPeerSync        = 10
 	VersionPeerSyncLogs    = 11
 	VersionInboundSpeed    = 12
+	VersionSyncLineNodes   = 13
 )
 
 type migration struct {
@@ -35,6 +36,7 @@ var registry = []migration{
 	{VersionPeerSync, migrateV010PeerSync},
 	{VersionPeerSyncLogs, migrateV011PeerSyncLogs},
 	{VersionInboundSpeed, migrateV012InboundSpeed},
+	{VersionSyncLineNodes, migrateV013SyncLineNodes},
 }
 
 func Run(db *gorm.DB) error {

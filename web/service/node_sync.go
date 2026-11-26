@@ -16,6 +16,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -100,6 +101,33 @@ type SyncNodeCheck struct {
 	Passive    bool   `json:"passive"`
 }
 
+// SyncDirectoryNode is one entry of the node directory exchanged between
+// panels. Hop is the distance from the panel that built the directory: 0 is
+// itself, 1 is a direct peer.
+type SyncDirectoryNode struct {
+	PanelId string `json:"panelId"`
+	Title   string `json:"title,omitempty"`
+	Address string `json:"address,omitempty"`
+	Hop     int    `json:"hop"`
+}
+
+type SyncLineNodeView struct {
+	PanelId      string `json:"panelId"`
+	Title        string `json:"title"`
+	Address      string `json:"address"`
+	ViaPanelId   string `json:"viaPanelId"`
+	ViaTitle     string `json:"viaTitle"`
+	Hop          int    `json:"hop"`
+	LastSeen     int64  `json:"lastSeen"`
+	LastSeenText string `json:"lastSeenText"`
+}
+
+const (
+	syncDirectoryLimit = 128
+	syncLineMaxHop     = 9
+	syncLineTTL        = 30 * 24 * time.Hour
+)
+
 type SyncDataSet struct {
 	Inbounds     []*model.Inbound         `json:"inbounds"`
 	Outbounds    []*model.Outbound        `json:"outbounds"`
@@ -121,6 +149,7 @@ type SyncPayload struct {
 	Outbounds    []*model.Outbound        `json:"outbounds"`
 	RoutingRules []*model.RoutingRule     `json:"routingRules"`
 	State        map[string]SyncItemState `json:"state,omitempty"`
+	Directory    []SyncDirectoryNode      `json:"directory,omitempty"`
 }
 
 type SyncApplyResult struct {
@@ -347,6 +376,216 @@ func (s *NodeSyncService) ListNodes() ([]*SyncNodeView, error) {
 	return views, nil
 }
 
+func syncDirectoryTitle(title, remark string) string {
+	if title = strings.TrimSpace(title); title != "" {
+		return title
+	}
+	return strings.TrimSpace(remark)
+}
+
+// buildSyncDirectory collects this panel plus every known peer and discovered
+// line node so the next sync can propagate the whole chain.
+func buildSyncDirectory(db *gorm.DB, localPanelId, localTitle, localAddress string) []SyncDirectoryNode {
+	entries := make(map[string]SyncDirectoryNode)
+	if localPanelId != "" {
+		entries[localPanelId] = SyncDirectoryNode{
+			PanelId: localPanelId,
+			Title:   strings.TrimSpace(localTitle),
+			Address: sanitizeSyncAddress(localAddress),
+			Hop:     0,
+		}
+	}
+	nodes := make([]*model.SyncNode, 0, 8)
+	if err := db.Select("peer_id", "peer_title", "remark", "address").Find(&nodes).Error; err == nil {
+		for _, node := range nodes {
+			panelId := strings.TrimSpace(node.PeerId)
+			if panelId == "" || panelId == localPanelId {
+				continue
+			}
+			if _, ok := entries[panelId]; ok {
+				continue
+			}
+			entries[panelId] = SyncDirectoryNode{
+				PanelId: panelId,
+				Title:   syncDirectoryTitle(node.PeerTitle, node.Remark),
+				Address: sanitizeSyncAddress(node.Address),
+				Hop:     1,
+			}
+		}
+	}
+	lineNodes := make([]*model.SyncLineNode, 0, 16)
+	if err := db.Select("panel_id", "title", "address", "hop").Find(&lineNodes).Error; err == nil {
+		for _, node := range lineNodes {
+			panelId := strings.TrimSpace(node.PanelId)
+			if panelId == "" || panelId == localPanelId {
+				continue
+			}
+			if existing, ok := entries[panelId]; ok && existing.Hop <= node.Hop {
+				continue
+			}
+			entries[panelId] = SyncDirectoryNode{
+				PanelId: panelId,
+				Title:   strings.TrimSpace(node.Title),
+				Address: sanitizeSyncAddress(node.Address),
+				Hop:     node.Hop,
+			}
+		}
+	}
+	directory := make([]SyncDirectoryNode, 0, len(entries))
+	for _, entry := range entries {
+		directory = append(directory, entry)
+	}
+	sort.Slice(directory, func(i, j int) bool {
+		if directory[i].Hop != directory[j].Hop {
+			return directory[i].Hop < directory[j].Hop
+		}
+		if directory[i].Title != directory[j].Title {
+			return directory[i].Title < directory[j].Title
+		}
+		return directory[i].PanelId < directory[j].PanelId
+	})
+	if len(directory) > syncDirectoryLimit {
+		directory = directory[:syncDirectoryLimit]
+	}
+	return directory
+}
+
+// mergeSyncDirectory stores nodes reported by source that are not direct
+// peers. Direct peers stay in sync_nodes and are never duplicated.
+func mergeSyncDirectory(db *gorm.DB, localPanelId string, source *SyncPayload) error {
+	if source == nil || len(source.Directory) == 0 {
+		return nil
+	}
+	sourceId := strings.TrimSpace(source.PanelId)
+	sourceTitle := syncDirectoryTitle(source.Title, "")
+	now := time.Now().Unix()
+	return db.Transaction(func(tx *gorm.DB) error {
+		direct := make(map[string]*model.SyncNode)
+		rows := make([]*model.SyncNode, 0, 8)
+		if err := tx.Select("id", "peer_id", "peer_title", "remark", "address", "passive").Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			if panelId := strings.TrimSpace(row.PeerId); panelId != "" {
+				direct[panelId] = row
+			}
+		}
+		seen := make(map[string]bool)
+		for _, entry := range source.Directory {
+			panelId := strings.TrimSpace(entry.PanelId)
+			if panelId == "" || panelId == localPanelId || seen[panelId] {
+				continue
+			}
+			seen[panelId] = true
+			title := strings.TrimSpace(entry.Title)
+			address := sanitizeSyncAddress(entry.Address)
+			if node, ok := direct[panelId]; ok {
+				updates := make(map[string]interface{})
+				if node.Passive && strings.TrimSpace(node.Address) == "" && address != "" {
+					updates["address"] = address
+				}
+				if strings.TrimSpace(node.PeerTitle) == "" && title != "" {
+					updates["peer_title"] = title
+				}
+				if len(updates) > 0 {
+					if err := tx.Model(&model.SyncNode{}).Where("id = ?", node.Id).Updates(updates).Error; err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			hop := entry.Hop + 1
+			if hop < 1 {
+				hop = 1
+			}
+			if hop > syncLineMaxHop {
+				hop = syncLineMaxHop
+			}
+			existing := model.SyncLineNode{}
+			found := tx.Where("panel_id = ?", panelId).Limit(1).Find(&existing)
+			if found.Error != nil {
+				return found.Error
+			}
+			if found.RowsAffected == 0 {
+				node := &model.SyncLineNode{
+					PanelId:    panelId,
+					Title:      title,
+					Address:    address,
+					ViaPanelId: sourceId,
+					ViaTitle:   sourceTitle,
+					Hop:        hop,
+					LastSeen:   now,
+				}
+				if err := tx.Create(node).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			updates := map[string]interface{}{"last_seen": now}
+			if title != "" {
+				updates["title"] = title
+			}
+			if address != "" {
+				updates["address"] = address
+			}
+			if hop < existing.Hop {
+				updates["hop"] = hop
+				updates["via_panel_id"] = sourceId
+				updates["via_title"] = sourceTitle
+			}
+			if err := tx.Model(&model.SyncLineNode{}).Where("id = ?", existing.Id).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if len(direct) > 0 {
+			ids := make([]string, 0, len(direct))
+			for panelId := range direct {
+				ids = append(ids, panelId)
+			}
+			if err := tx.Where("panel_id IN ?", ids).Delete(&model.SyncLineNode{}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Where("last_seen < ?", time.Now().Add(-syncLineTTL).Unix()).Delete(&model.SyncLineNode{}).Error
+	})
+}
+
+func (s *NodeSyncService) ListLineNodes() ([]*SyncLineNodeView, error) {
+	rows := make([]*model.SyncLineNode, 0, 16)
+	if err := database.GetDB().Order("hop asc, title asc, panel_id asc").Find(&rows).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	direct := make(map[string]bool)
+	nodes := make([]*model.SyncNode, 0, 8)
+	if err := database.GetDB().Select("peer_id").Find(&nodes).Error; err == nil {
+		for _, node := range nodes {
+			if panelId := strings.TrimSpace(node.PeerId); panelId != "" {
+				direct[panelId] = true
+			}
+		}
+	}
+	views := make([]*SyncLineNodeView, 0, len(rows))
+	seen := make(map[string]bool)
+	for _, row := range rows {
+		panelId := strings.TrimSpace(row.PanelId)
+		if panelId == "" || direct[panelId] || seen[panelId] {
+			continue
+		}
+		seen[panelId] = true
+		views = append(views, &SyncLineNodeView{
+			PanelId:      panelId,
+			Title:        row.Title,
+			Address:      row.Address,
+			ViaPanelId:   row.ViaPanelId,
+			ViaTitle:     row.ViaTitle,
+			Hop:          row.Hop,
+			LastSeen:     row.LastSeen,
+			LastSeenText: formatPanelTime(row.LastSeen),
+		})
+	}
+	return views, nil
+}
+
 func (s *NodeSyncService) nextSort() int {
 	var maxSort int
 	database.GetDB().Model(&model.SyncNode{}).Select("COALESCE(MAX(sort), 0)").Scan(&maxSort)
@@ -397,6 +636,7 @@ func (s *NodeSyncService) AddNode(remark, address, username, password string) (*
 	if err := database.GetDB().Create(node).Error; err != nil {
 		return nil, err
 	}
+	database.GetDB().Where("panel_id = ?", node.PeerId).Delete(&model.SyncLineNode{})
 	s.addSyncLog(node.Id, "info", "已添加对端："+syncNodeName(node))
 	return node, nil
 }
@@ -457,6 +697,9 @@ func (s *NodeSyncService) UpdateNode(id int, remark, address, username, password
 
 	if err := database.GetDB().Save(node).Error; err != nil {
 		return nil, err
+	}
+	if node.PeerId != "" {
+		database.GetDB().Where("panel_id = ?", node.PeerId).Delete(&model.SyncLineNode{})
 	}
 	if credentialsChanged {
 		s.addSyncLog(node.Id, "info", "对端信息已更新，需要重新检查")
@@ -989,6 +1232,9 @@ func (s *NodeSyncService) syncPeerRound(node *model.SyncNode) (*SyncPeerResult, 
 	if err != nil {
 		return nil, err
 	}
+	if err := mergeSyncDirectory(database.GetDB(), localPanelId, remotePayload); err != nil {
+		logger.Warning("node sync: merge peer directory failed: ", err)
+	}
 	baseData := parseSyncDataSet(node.BaseData)
 	merged := mergeSyncData(baseData, localData, remoteData, localPanelId, node.PeerId)
 
@@ -1106,8 +1352,16 @@ func (s *NodeSyncService) ReceiveMerge(payload *SyncPayload) (*SyncApplyResult, 
 		}
 	} else if err != nil {
 		return nil, err
-	} else if title := strings.TrimSpace(payload.Title); title != "" {
-		node.PeerTitle = title
+	} else {
+		if title := strings.TrimSpace(payload.Title); title != "" {
+			node.PeerTitle = title
+		}
+		if strings.TrimSpace(node.Address) == "" {
+			node.Address = sanitizeSyncAddress(payload.Address)
+		}
+	}
+	if err := mergeSyncDirectory(database.GetDB(), localPanelId, payload); err != nil {
+		logger.Warning("node sync: merge peer directory failed: ", err)
 	}
 
 	localData, err := s.BuildLocalDataSet()
@@ -1206,11 +1460,14 @@ func (s *NodeSyncService) buildSyncPayload(data *SyncDataSet, panelId string) *S
 	if title == "" {
 		title, _ = os.Hostname()
 	}
+	selfAddress, _ := s.settingService.GetSyncPanelAddress()
+	selfAddress = sanitizeSyncAddress(selfAddress)
 	return &SyncPayload{
 		App:          SyncAppID,
 		Version:      config.GetVersion(),
 		PanelId:      panelId,
 		Title:        title,
+		Address:      selfAddress,
 		Timezone:     meta.Setting,
 		ZoneName:     meta.Zone,
 		UtcOffset:    meta.Offset,
@@ -1219,6 +1476,7 @@ func (s *NodeSyncService) buildSyncPayload(data *SyncDataSet, panelId string) *S
 		Outbounds:    data.Outbounds,
 		RoutingRules: data.RoutingRules,
 		State:        data.State,
+		Directory:    buildSyncDirectory(database.GetDB(), panelId, title, selfAddress),
 	}
 }
 

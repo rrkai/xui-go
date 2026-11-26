@@ -73,16 +73,55 @@ func (a *NodeSyncController) nodes(c *gin.Context) {
 		jsonObj(c, nil, err)
 		return
 	}
+	lineNodes, err := a.syncService.ListLineNodes()
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
 	autoInterval, _ := a.syncService.AutoInterval()
 	jsonObj(c, gin.H{
 		"version":      info.Version,
 		"panelId":      info.PanelId,
+		"title":        info.Title,
+		"selfAddress":  selfPanelAddress(c),
 		"timezone":     info.Timezone,
 		"zoneName":     info.ZoneName,
 		"serverTime":   info.ServerTime,
 		"autoInterval": autoInterval,
 		"nodes":        nodes,
+		"lineNodes":    lineNodes,
 	}, nil)
+}
+
+// recordSyncPanelAddress remembers the address peers actually used to reach
+// this panel, so passive peers and the node directory can show it later.
+func recordSyncPanelAddress(c *gin.Context) {
+	address := selfPanelAddress(c)
+	if address == "" {
+		return
+	}
+	settingService := service.SettingService{}
+	if current, err := settingService.GetSyncPanelAddress(); err == nil && current == address {
+		return
+	}
+	_ = settingService.SetSyncPanelAddress(address)
+}
+
+func selfPanelAddress(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	if proto := strings.ToLower(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto"))); proto == "http" || proto == "https" {
+		scheme = proto
+	}
+	basePath := ""
+	if value, ok := c.Get("base_path"); ok {
+		if path, ok := value.(string); ok {
+			basePath = path
+		}
+	}
+	return scheme + "://" + c.Request.Host + basePath
 }
 
 func (a *NodeSyncController) addNode(c *gin.Context) {
@@ -198,16 +237,19 @@ func (a *NodeSyncController) saveAuto(c *gin.Context) {
 }
 
 func (a *NodeSyncController) remoteInfo(c *gin.Context) {
+	recordSyncPanelAddress(c)
 	info, err := a.syncService.PanelInfo()
 	jsonObj(c, info, err)
 }
 
 func (a *NodeSyncController) exportData(c *gin.Context) {
+	recordSyncPanelAddress(c)
 	payload, err := a.syncService.BuildExportPayload()
 	jsonObj(c, payload, err)
 }
 
 func (a *NodeSyncController) receiveMerge(c *gin.Context) {
+	recordSyncPanelAddress(c)
 	payload := &service.SyncPayload{}
 	if err := c.ShouldBindJSON(payload); err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.nodeSync.toasts.synced"), err)
@@ -223,6 +265,7 @@ type syncTimezoneForm struct {
 }
 
 func (a *NodeSyncController) applyTimezone(c *gin.Context) {
+	recordSyncPanelAddress(c)
 	var form syncTimezoneForm
 	if err := c.ShouldBind(&form); err != nil {
 		jsonObj(c, nil, err)
