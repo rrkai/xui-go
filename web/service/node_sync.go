@@ -1544,6 +1544,7 @@ func (s *NodeSyncService) applyDataSet(data *SyncDataSet, userId int) (*SyncAppl
 	}
 
 	s.syncIpLimitStoreForApply(oldInbounds, newInbounds)
+	reconcileRateLimit()
 	if needRestart {
 		(&XrayService{}).SetToNeedRestart()
 	}

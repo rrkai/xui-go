@@ -35,6 +35,8 @@ type Inbound struct {
 	Remark      string               `json:"remark" form:"remark"`
 	Enable      bool                 `json:"enable" form:"enable"`
 	ExpiryTime  int64                `json:"expiryTime" form:"expiryTime"`
+	SpeedUp     int                  `json:"speedUp" form:"speedUp"`
+	SpeedDown   int                  `json:"speedDown" form:"speedDown"`
 	ClientStats []xray.ClientTraffic `gorm:"foreignKey:InboundId;references:Id" json:"clientStats" form:"clientStats"`
 
 	// config part

@@ -231,6 +231,39 @@ func TestVerifyPeerMeta(t *testing.T) {
 	}
 }
 
+func TestMergeRateLimitChange(t *testing.T) {
+	baseItem := testInbound("a", 1001, "v1")
+	baseItem.SpeedDown = 100000
+	base := &SyncDataSet{
+		Inbounds: []*model.Inbound{baseItem},
+		State:    map[string]SyncItemState{SyncStateKey(SyncKindInbound, "a"): testState(100)},
+	}
+	localItem := testInbound("a", 1001, "v1")
+	localItem.SpeedDown = 100000
+	local := &SyncDataSet{
+		Inbounds: []*model.Inbound{localItem},
+		State:    map[string]SyncItemState{SyncStateKey(SyncKindInbound, "a"): testState(100)},
+	}
+	remoteItem := testInbound("a", 1001, "v1")
+	remoteItem.SpeedUp = 50000
+	remoteItem.SpeedDown = 250000
+	remote := &SyncDataSet{
+		Inbounds: []*model.Inbound{remoteItem},
+		State:    map[string]SyncItemState{SyncStateKey(SyncKindInbound, "a"): testState(300)},
+	}
+	if datasetContentEqual(local, remote) {
+		t.Fatalf("rate limits must affect content equality")
+	}
+	merged := mergeSyncData(base, local, remote, "panel-a", "panel-b")
+	if len(merged.Data.Inbounds) != 1 {
+		t.Fatalf("expected one inbound, got %d", len(merged.Data.Inbounds))
+	}
+	got := merged.Data.Inbounds[0]
+	if got.SpeedUp != 50000 || got.SpeedDown != 250000 {
+		t.Fatalf("rate limit update did not win the merge: %+v", got)
+	}
+}
+
 func TestMergeIgnoresTrafficCounters(t *testing.T) {
 	base := &SyncDataSet{
 		Inbounds: []*model.Inbound{testInbound("a", 1001, "v1")},

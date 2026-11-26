@@ -343,10 +343,10 @@ func ruleEntryTag(rule *model.RoutingRule) string {
 }
 
 func inboundFingerprint(inbound *model.Inbound) string {
-	raw := fmt.Sprintf("%t\x00%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%s\x00%d\x00%d",
+	raw := fmt.Sprintf("%t\x00%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d",
 		inbound.Enable, inbound.Listen, inbound.Port, inbound.Protocol,
 		inbound.Settings, inbound.StreamSettings, inbound.Sniffing,
-		inbound.Remark, inbound.Total, inbound.ExpiryTime)
+		inbound.Remark, inbound.Total, inbound.ExpiryTime, inbound.SpeedUp, inbound.SpeedDown)
 	return hashSyncContent(raw)
 }
 

@@ -37,6 +37,32 @@
                 <template slot="label">
                     <a-tooltip>
                         <template slot="title">
+                            <span>{{ i18n "pages.inbounds.speedLimitDesc" }}</span>
+                        </template>
+                        {{ i18n "pages.inbounds.speedUp" }}
+                        <a-icon type="question-circle"></a-icon>
+                    </a-tooltip>
+                </template>
+                <a-input-number v-model.number="dbInbound.speedUpMbps" :min="0" :max="100000"></a-input-number> Mbps
+            </a-form-item>
+
+            <a-form-item>
+                <template slot="label">
+                    <a-tooltip>
+                        <template slot="title">
+                            <span>{{ i18n "pages.inbounds.speedLimitDesc" }}</span>
+                        </template>
+                        {{ i18n "pages.inbounds.speedDown" }}
+                        <a-icon type="question-circle"></a-icon>
+                    </a-tooltip>
+                </template>
+                <a-input-number v-model.number="dbInbound.speedDownMbps" :min="0" :max="100000"></a-input-number> Mbps
+            </a-form-item>
+
+            <a-form-item>
+                <template slot="label">
+                    <a-tooltip>
+                        <template slot="title">
                             <span>{{ i18n "pages.inbounds.meansNoLimit" }}</span>
                         </template>
                         {{ i18n "pages.inbounds.totalFlow" }}

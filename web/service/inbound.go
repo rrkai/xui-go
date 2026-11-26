@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -27,7 +28,18 @@ const (
 	// dailyTrafficBatchSize keeps the multi-row upsert well below SQLite's
 	// bound-parameter limit (4 parameters per row).
 	dailyTrafficBatchSize = 250
+	maxSpeedKbps          = 100_000_000
 )
+
+func validateInboundSpeed(inbound *model.Inbound) error {
+	if inbound.SpeedUp < 0 || inbound.SpeedUp > maxSpeedKbps {
+		return common.NewError("inbound speedUp must be between 0 and 100000000 kbps:", inbound.SpeedUp)
+	}
+	if inbound.SpeedDown < 0 || inbound.SpeedDown > maxSpeedKbps {
+		return common.NewError("inbound speedDown must be between 0 and 100000000 kbps:", inbound.SpeedDown)
+	}
+	return nil
+}
 
 func (s *InboundService) GetInbounds(userId int) ([]*model.Inbound, error) {
 	db := database.GetDB()
@@ -213,6 +225,9 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	if existEmail != "" {
 		return inbound, false, common.NewError("Duplicate email:", existEmail)
 	}
+	if err := validateInboundSpeed(inbound); err != nil {
+		return inbound, false, err
+	}
 	if err = xray.CheckShadowsocks2022Keys(string(inbound.Protocol), inbound.Settings); err != nil {
 		return inbound, false, err
 	}
@@ -283,6 +298,7 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	}
 
 	s.syncIpLimitStore(ipLimitUpdatesFromClients(inbound, clients), nil)
+	reconcileRateLimit()
 	return inbound, needRestart, nil
 }
 
@@ -331,6 +347,7 @@ func (s *InboundService) DelInbound(id int) (bool, error) {
 	err = db.Delete(model.Inbound{}, id).Error
 	if err == nil {
 		(&SyncStateService{}).Touch(SyncKindInbound, inboundEntryTag(inbound), true)
+		reconcileRateLimit()
 	}
 	return needRestart, err
 }
@@ -356,6 +373,9 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	if err = xray.CheckShadowsocks2022Keys(string(inbound.Protocol), inbound.Settings); err != nil {
 		return inbound, false, err
 	}
+	if err := validateInboundSpeed(inbound); err != nil {
+		return inbound, false, err
+	}
 
 	oldInbound, err := s.GetInbound(inbound.Id)
 	if err != nil {
@@ -367,6 +387,8 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		return inbound, false, err
 	}
 
+	oldEnabled := oldInbound.Enable
+	oldXrayConfig, oldXrayConfigErr := json.Marshal(oldInbound.GenXrayInboundConfig())
 	tag := oldInbound.Tag
 
 	db := database.GetDB()
@@ -384,6 +406,8 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	oldInbound.Remark = inbound.Remark
 	oldInbound.Enable = inbound.Enable
 	oldInbound.ExpiryTime = inbound.ExpiryTime
+	oldInbound.SpeedUp = inbound.SpeedUp
+	oldInbound.SpeedDown = inbound.SpeedDown
 	oldInbound.Listen = inbound.Listen
 	oldInbound.Port = inbound.Port
 	oldInbound.Protocol = inbound.Protocol
@@ -410,26 +434,36 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	}
 
 	needRestart := false
-	s.xrayApi.Init(p.GetAPIAddr())
-	if s.xrayApi.DelInbound(tag) == nil {
-		logger.Debug("Old inbound deleted by api:", tag)
+	// Remarks and rate limits are panel-side data: when the generated Xray
+	// config is unchanged, skip the Del/Add round trip entirely so existing
+	// connections stay up.
+	xrayConfigChanged := oldXrayConfigErr != nil || oldEnabled != oldInbound.Enable || tag != oldInbound.Tag
+	if !xrayConfigChanged {
+		newXrayConfig, err2 := json.Marshal(oldInbound.GenXrayInboundConfig())
+		xrayConfigChanged = err2 != nil || !bytes.Equal(oldXrayConfig, newXrayConfig)
 	}
-	if inbound.Enable {
-		inboundJson, err2 := json.MarshalIndent(oldInbound.GenXrayInboundConfig(), "", "  ")
-		if err2 != nil {
-			logger.Debug("Unable to marshal updated inbound config:", err2)
-			needRestart = true
-		} else {
-			err2 = s.xrayApi.AddInbound(inboundJson)
-			if err2 == nil {
-				logger.Debug("Updated inbound added by api:", oldInbound.Tag)
-			} else {
-				logger.Debug("Unable to update inbound by api:", err2)
+	if xrayConfigChanged {
+		s.xrayApi.Init(p.GetAPIAddr())
+		if s.xrayApi.DelInbound(tag) == nil {
+			logger.Debug("Old inbound deleted by api:", tag)
+		}
+		if inbound.Enable {
+			inboundJson, err2 := json.MarshalIndent(oldInbound.GenXrayInboundConfig(), "", "  ")
+			if err2 != nil {
+				logger.Debug("Unable to marshal updated inbound config:", err2)
 				needRestart = true
+			} else {
+				err2 = s.xrayApi.AddInbound(inboundJson)
+				if err2 == nil {
+					logger.Debug("Updated inbound added by api:", oldInbound.Tag)
+				} else {
+					logger.Debug("Unable to update inbound by api:", err2)
+					needRestart = true
+				}
 			}
 		}
+		s.xrayApi.Close()
 	}
-	s.xrayApi.Close()
 
 	syncInbound := *oldInbound
 	syncInbound.Enable = inbound.Enable
@@ -441,6 +475,7 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		ipLimitUpdatesFromClients(&syncInbound, newClients),
 		ipLimitRemovedEmails(oldClients, newClients),
 	)
+	reconcileRateLimit()
 	return inbound, needRestart, nil
 }
 

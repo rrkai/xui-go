@@ -311,6 +311,15 @@
                                     </a-menu>
                                 </a-dropdown>
                             </template>
+                            <template slot="port" slot-scope="text, dbInbound">
+                                <div>[[ dbInbound.port ]]</div>
+                                <a-tooltip v-if="dbInbound.speedUp > 0 || dbInbound.speedDown > 0"
+                                    :title="'↑ ' + (dbInbound.speedUp / 1000) + ' / ↓ ' + (dbInbound.speedDown / 1000) + ' Mbps'">
+                                    <a-tag style="margin:0;" color="cyan">
+                                        ↓[[ dbInbound.speedDown > 0 ? dbInbound.speedDown / 1000 : '∞' ]]/↑[[ dbInbound.speedUp > 0 ? dbInbound.speedUp / 1000 : '∞' ]]
+                                    </a-tag>
+                                </a-tooltip>
+                            </template>
                             <template slot="protocol" slot-scope="text, dbInbound">
                                 <a-tag style="margin:0;" color="purple">[[ dbInbound.protocol ]]</a-tag>
                                 <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS">
@@ -403,6 +412,12 @@
                                             <tr>
                                                 <td>{{ i18n "pages.inbounds.port" }}</td>
                                                 <td><a-tag>[[ dbInbound.port ]]</a-tag></td>
+                                            </tr>
+                                            <tr v-if="dbInbound.speedUp > 0 || dbInbound.speedDown > 0">
+                                                <td>{{ i18n "pages.inbounds.speedLimit" }}</td>
+                                                <td>
+                                                    <a-tag color="cyan">↑[[ dbInbound.speedUp > 0 ? dbInbound.speedUp / 1000 : '∞' ]] / ↓[[ dbInbound.speedDown > 0 ? dbInbound.speedDown / 1000 : '∞' ]] Mbps</a-tag>
+                                                </td>
                                             </tr>
                                             <tr v-if="clientCount[dbInbound.id]">
                                                 <td>{{ i18n "clients" }}</td>
@@ -550,8 +565,8 @@
     }, {
         title: '{{ i18n "pages.inbounds.port" }}',
         align: 'center',
-        dataIndex: "port",
-        width: 40,
+        width: 64,
+        scopedSlots: { customRender: 'port' },
     }, {
         title: '{{ i18n "protocol" }}',
         align: 'left',
@@ -1102,6 +1117,8 @@
                     remark: dbInbound.remark + " - Cloned",
                     enable: dbInbound.enable,
                     expiryTime: dbInbound.expiryTime,
+                    speedUp: dbInbound.speedUp,
+                    speedDown: dbInbound.speedDown,
 
                     listen: '',
                     port: RandomUtil.randomIntRange(10000, 60000),
@@ -1120,6 +1137,8 @@
                     remark: dbInbound.remark,
                     enable: dbInbound.enable,
                     expiryTime: dbInbound.expiryTime,
+                    speedUp: dbInbound.speedUp,
+                    speedDown: dbInbound.speedDown,
 
                     listen: inbound.listen,
                     port: inbound.port,
@@ -1143,6 +1162,8 @@
                     remark: dbInbound.remark,
                     enable: dbInbound.enable,
                     expiryTime: dbInbound.expiryTime,
+                    speedUp: dbInbound.speedUp,
+                    speedDown: dbInbound.speedDown,
 
                     listen: inbound.listen,
                     port: inbound.port,

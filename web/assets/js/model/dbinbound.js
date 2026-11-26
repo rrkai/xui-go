@@ -9,6 +9,8 @@ class DBInbound {
         this.remark = "";
         this.enable = true;
         this.expiryTime = 0;
+        this.speedUp = 0;
+        this.speedDown = 0;
 
         this.listen = "";
         this.port = 0;
@@ -30,6 +32,22 @@ class DBInbound {
 
     set totalGB(gb) {
         this.total = toFixed(gb * ONE_GB, 0);
+    }
+
+    get speedUpMbps() {
+        return this.speedUp / 1000;
+    }
+
+    set speedUpMbps(mbps) {
+        this.speedUp = Math.round((mbps || 0) * 1000);
+    }
+
+    get speedDownMbps() {
+        return this.speedDown / 1000;
+    }
+
+    set speedDownMbps(mbps) {
+        this.speedDown = Math.round((mbps || 0) * 1000);
     }
 
     get isVMess() {

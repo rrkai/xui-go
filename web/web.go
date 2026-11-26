@@ -264,6 +264,12 @@ func (s *Server) startTask(ipLimitCron bool) {
 
 	s.cron.AddJob("@every 1m", job.NewAutoBackupJob())
 
+	// Keep per-inbound nftables rate limits in sync with the database.
+	s.cron.AddJob("@every 30s", job.NewRateLimitJob())
+	if err := (&service.RateLimitService{}).Reconcile(); err != nil {
+		logger.Warning("initial rate limit reconcile failed:", err)
+	}
+
 	// Push master data to ready slave panels on the configured interval.
 	s.cron.AddJob("@every 30s", job.NewNodeSyncAutoJob())
 
