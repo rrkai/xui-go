@@ -75,12 +75,12 @@ func TestS3EncodeQuery(t *testing.T) {
 
 func TestS3ObjectURLAddressing(t *testing.T) {
 	r2, err := (s3BackupConfig{
-		Endpoint: "https://abc123.r2.cloudflarestorage.com",
-		Region:   "auto",
-		Bucket:   "xui-backups",
+		Endpoint:  "https://abc123.r2.cloudflarestorage.com",
+		Region:    "auto",
+		Bucket:    "xui-backups",
 		AccessKey: awsTestAccessKey,
 		SecretKey: awsTestSecretKey,
-		Prefix:   "/nested/",
+		Prefix:    "/nested/",
 	}).normalize()
 	if err != nil {
 		t.Fatal(err)
@@ -97,9 +97,9 @@ func TestS3ObjectURLAddressing(t *testing.T) {
 	}
 
 	aws, err := (s3BackupConfig{
-		Endpoint: "https://s3.us-east-1.amazonaws.com",
-		Region:   "us-east-1",
-		Bucket:   "xui-backups",
+		Endpoint:  "https://s3.us-east-1.amazonaws.com",
+		Region:    "us-east-1",
+		Bucket:    "xui-backups",
 		AccessKey: awsTestAccessKey,
 		SecretKey: awsTestSecretKey,
 	}).normalize()
@@ -115,9 +115,9 @@ func TestS3ObjectURLAddressing(t *testing.T) {
 	}
 
 	minio, err := (s3BackupConfig{
-		Endpoint: "http://127.0.0.1:9000",
-		Region:   "us-east-1",
-		Bucket:   "xui",
+		Endpoint:  "http://127.0.0.1:9000",
+		Region:    "us-east-1",
+		Bucket:    "xui",
 		AccessKey: awsTestAccessKey,
 		SecretKey: awsTestSecretKey,
 	}).normalize()
@@ -135,9 +135,9 @@ func TestS3ObjectURLAddressing(t *testing.T) {
 
 func TestS3NormalizeRejectsBadEndpoint(t *testing.T) {
 	_, err := (s3BackupConfig{
-		Endpoint: "https://s3.example.com/some/path",
-		Region:   "us-east-1",
-		Bucket:   "xui",
+		Endpoint:  "https://s3.example.com/some/path",
+		Region:    "us-east-1",
+		Bucket:    "xui",
 		AccessKey: awsTestAccessKey,
 		SecretKey: awsTestSecretKey,
 	}).normalize()
