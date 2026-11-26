@@ -95,16 +95,6 @@
         font-size: 12px;
         opacity: .6;
     }
-    .node-sync-name {
-        margin-right: 6px;
-        font-weight: 600;
-    }
-    .node-sync-via {
-        display: block;
-        margin-top: 2px;
-        font-size: 11px;
-        opacity: .6;
-    }
     </style>
 <body>
 <a-layout id="app" v-cloak :class="themeSwitcher.currentTheme">
@@ -152,38 +142,29 @@
                     </div>
                 </a-card>
                 <a-card>
-                    <a-table :key="tableKey" :columns="columns" :data-source="tableNodes" row-key="key"
-                             :pagination="false" :default-expand-all-rows="true" :indent-size="18"
-                             :scroll="{x: 900}"
+                    <a-table :columns="columns" :data-source="nodes" row-key="id"
+                             :pagination="false" :scroll="{x: 1200}"
                              :locale="{emptyText: '{{ i18n "pages.nodeSync.empty" }}'}">
-                        <span slot="order" slot-scope="text, record">
-                            <a-button-group v-if="record.rowType === 'direct' || record.rowType === 'passive'"
-                                            size="small" class="node-sync-order">
-                                <a-button icon="arrow-up" :disabled="!canMoveUp(record)" @click="move(record, 'up')"></a-button>
-                                <a-button icon="arrow-down" :disabled="!canMoveDown(record)" @click="move(record, 'down')"></a-button>
+                        <span slot="order" slot-scope="text, record, index">
+                            <a-button-group size="small" class="node-sync-order">
+                                <a-button icon="arrow-up" :disabled="index === 0" @click="move(record, 'up')"></a-button>
+                                <a-button icon="arrow-down" :disabled="index === nodes.length - 1" @click="move(record, 'down')"></a-button>
                             </a-button-group>
-                            <span v-else class="node-sync-auto-hint">—</span>
                         </span>
-                        <span slot="node" slot-scope="text, record">
-                            <span class="node-sync-name">[[ record.peerTitle || '—' ]]</span>
-                            <a-tag v-if="record.rowType === 'self'" color="green">[[ selfTag ]]</a-tag>
-                            <a-tag v-else-if="record.rowType === 'passive'" color="blue">[[ passiveTypeTag ]]</a-tag>
-                            <a-tooltip v-else-if="record.rowType === 'indirect'" :title="indirectVia(record)">
-                                <a-tag>[[ indirectTag ]]</a-tag>
-                            </a-tooltip>
-                            <a-tag v-else color="cyan">[[ directTag ]]</a-tag>
-                            <span v-if="(record.rowType === 'direct' || record.rowType === 'passive') && record.remark"
-                                  class="node-sync-via">[[ record.remark ]]</span>
+                        <span slot="remark" slot-scope="text, record">
+                            <span>[[ text || '#' + record.id ]]</span>
+                            <a-tag v-if="record.passive" color="blue" style="margin-left: 6px;">[[ passiveText ]]</a-tag>
+                        </span>
+                        <span slot="hostname" slot-scope="text">
+                            <span v-if="text">[[ text ]]</span>
+                            <span v-else class="node-sync-auto-hint">—</span>
                         </span>
                         <span slot="address" slot-scope="text, record">
                             <span v-if="text" class="node-sync-address">[[ text ]]</span>
                             <span v-else class="node-sync-auto-hint">—</span>
                         </span>
                         <span slot="status" slot-scope="text, record">
-                            <template v-if="record.rowType === 'self' || record.rowType === 'indirect'">
-                                <span class="node-sync-auto-hint">—</span>
-                            </template>
-                            <template v-else-if="record.passive">
+                            <template v-if="record.passive">
                                 <a-tag color="blue">[[ passiveText ]]</a-tag>
                             </template>
                             <template v-else-if="nodeChecks[record.id]">
@@ -206,46 +187,36 @@
                             </a-tag>
                         </span>
                         <span slot="lastSync" slot-scope="text, record">
-                            <template v-if="record.rowType === 'self' || record.rowType === 'indirect'">
-                                <span class="node-sync-auto-hint">—</span>
-                            </template>
-                            <template v-else>
-                                [[ record.lastSyncText || neverText ]]
-                            </template>
+                            [[ record.lastSyncText || neverText ]]
                         </span>
                         <span slot="actions" slot-scope="text, record">
-                            <template v-if="record.rowType === 'self' || record.rowType === 'indirect'">
-                                <span class="node-sync-auto-hint">—</span>
-                            </template>
-                            <template v-else>
-                                <a-dropdown :trigger="['click']">
-                                    <a-button size="small" type="primary" icon="menu">
-                                        {{ i18n "pages.nodeSync.operate" }}
-                                    </a-button>
-                                    <a-menu slot="overlay" @click="({key}) => handleAction(key, record)"
-                                            :theme="themeSwitcher.currentTheme">
-                                        <a-menu-item v-if="!record.passive" key="check">
-                                            <a-icon type="check-circle"></a-icon>
-                                            {{ i18n "pages.nodeSync.checkNode" }}
-                                        </a-menu-item>
-                                        <a-menu-item v-if="!record.passive && record.ready" key="sync">
-                                            <a-icon type="cloud-sync"></a-icon>
-                                            {{ i18n "pages.nodeSync.syncNow" }}
-                                        </a-menu-item>
-                                        <a-menu-item v-if="!record.passive" key="edit">
-                                            <a-icon type="edit"></a-icon>
-                                            {{ i18n "pages.nodeSync.editNode" }}
-                                        </a-menu-item>
-                                        <a-menu-item key="delete">
-                                            <a-icon type="delete"></a-icon>
-                                            <span style="color: #e5484d;">{{ i18n "pages.nodeSync.deleteNode" }}</span>
-                                        </a-menu-item>
-                                    </a-menu>
-                                </a-dropdown>
-                                <a-button size="small" icon="file-text" class="node-sync-log-btn" @click="openLogs(record)">
-                                    {{ i18n "pages.nodeSync.logs" }}
+                            <a-dropdown :trigger="['click']">
+                                <a-button size="small" type="primary" icon="menu">
+                                    {{ i18n "pages.nodeSync.operate" }}
                                 </a-button>
-                            </template>
+                                <a-menu slot="overlay" @click="({key}) => handleAction(key, record)"
+                                        :theme="themeSwitcher.currentTheme">
+                                    <a-menu-item v-if="!record.passive" key="check">
+                                        <a-icon type="check-circle"></a-icon>
+                                        {{ i18n "pages.nodeSync.checkNode" }}
+                                    </a-menu-item>
+                                    <a-menu-item v-if="!record.passive && record.ready" key="sync">
+                                        <a-icon type="cloud-sync"></a-icon>
+                                        {{ i18n "pages.nodeSync.syncNow" }}
+                                    </a-menu-item>
+                                    <a-menu-item v-if="!record.passive" key="edit">
+                                        <a-icon type="edit"></a-icon>
+                                        {{ i18n "pages.nodeSync.editNode" }}
+                                    </a-menu-item>
+                                    <a-menu-item key="delete">
+                                        <a-icon type="delete"></a-icon>
+                                        <span style="color: #e5484d;">{{ i18n "pages.nodeSync.deleteNode" }}</span>
+                                    </a-menu-item>
+                                </a-menu>
+                            </a-dropdown>
+                            <a-button size="small" icon="file-text" class="node-sync-log-btn" @click="openLogs(record)">
+                                {{ i18n "pages.nodeSync.logs" }}
+                            </a-button>
                         </span>
                     </a-table>
                 </a-card>
@@ -301,26 +272,13 @@
             themeSwitcher,
             spinning: false,
             version: '',
-            panelId: '',
-            panelTitle: '',
-            selfAddress: '',
             timezone: '',
             zoneName: '',
             nodes: [],
-            lineNodes: [],
-            tableKey: 0,
             nodeChecks: {},
             syncingAll: false,
             checkingText: '{{ i18n "pages.nodeSync.statusChecking" }}',
             passiveText: '{{ i18n "pages.nodeSync.passiveTag" }}',
-            selfTag: '{{ i18n "pages.nodeSync.selfTag" }}',
-            directTag: '{{ i18n "pages.nodeSync.directTag" }}',
-            passiveTypeTag: '{{ i18n "pages.nodeSync.passiveTypeTag" }}',
-            indirectTag: '{{ i18n "pages.nodeSync.indirectTag" }}',
-            viaText: '{{ i18n "pages.nodeSync.via" }}',
-            hopText: '{{ i18n "pages.nodeSync.hop" }}',
-            hopUnitText: '{{ i18n "pages.nodeSync.hopUnit" }}',
-            unknownNodeText: '{{ i18n "pages.nodeSync.unknownNode" }}',
             readyText: '{{ i18n "pages.nodeSync.statusReady" }}',
             pendingText: '{{ i18n "pages.nodeSync.statusPending" }}',
             neverText: '{{ i18n "pages.nodeSync.never" }}',
@@ -388,12 +346,13 @@
                 passwordKeep: '{{ i18n "pages.nodeSync.passwordKeep" }}',
             },
             columns: [
-                { title: '{{ i18n "pages.nodeSync.node" }}', dataIndex: 'peerTitle', width: 220, scopedSlots: { customRender: 'node' } },
-                { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 180, scopedSlots: { customRender: 'address' } },
-                { title: '{{ i18n "pages.nodeSync.status" }}', width: 130, scopedSlots: { customRender: 'status' } },
-                { title: '{{ i18n "pages.nodeSync.lastSync" }}', dataIndex: 'lastSync', width: 130, scopedSlots: { customRender: 'lastSync' } },
-                { title: '{{ i18n "pages.nodeSync.order" }}', width: 70, scopedSlots: { customRender: 'order' } },
-                { title: '{{ i18n "pages.nodeSync.operate" }}', width: 170, scopedSlots: { customRender: 'actions' } },
+                { title: '{{ i18n "pages.nodeSync.order" }}', width: 90, scopedSlots: { customRender: 'order' } },
+                { title: '{{ i18n "pages.nodeSync.remark" }}', dataIndex: 'remark', width: 160, scopedSlots: { customRender: 'remark' } },
+                { title: '{{ i18n "pages.nodeSync.hostname" }}', dataIndex: 'peerTitle', width: 160, scopedSlots: { customRender: 'hostname' } },
+                { title: '{{ i18n "pages.nodeSync.address" }}', dataIndex: 'address', width: 240, scopedSlots: { customRender: 'address' } },
+                { title: '{{ i18n "pages.nodeSync.status" }}', width: 180, scopedSlots: { customRender: 'status' } },
+                { title: '{{ i18n "pages.nodeSync.lastSync" }}', dataIndex: 'lastSync', width: 160, scopedSlots: { customRender: 'lastSync' } },
+                { title: '{{ i18n "pages.nodeSync.operate" }}', width: 190, scopedSlots: { customRender: 'actions' } },
             ],
             modal: {
                 visible: false,
@@ -410,78 +369,6 @@
             hasActiveNodes() {
                 return this.nodes.some(node => !node.passive);
             },
-            tableNodes() {
-                const selfRow = {
-                    key: 'self',
-                    rowType: 'self',
-                    panelId: this.panelId,
-                    id: 0,
-                    remark: '',
-                    peerTitle: this.panelTitle || this.selfTag,
-                    address: this.selfAddress,
-                    passive: false,
-                    ready: true,
-                    lastSyncText: '',
-                    children: [],
-                };
-                const directRows = {};
-                this.nodes.forEach(node => {
-                    directRows[node.peerId] = Object.assign({}, node, {
-                        key: 'node-' + node.id,
-                        rowType: node.passive ? 'passive' : 'direct',
-                        panelId: node.peerId,
-                        children: [],
-                    });
-                });
-                const lineRows = {};
-                this.lineNodes.forEach(node => {
-                    lineRows[node.panelId] = {
-                        key: 'line-' + node.panelId,
-                        rowType: 'indirect',
-                        panelId: node.panelId,
-                        id: 0,
-                        remark: '',
-                        peerTitle: node.title || node.panelId,
-                        address: node.address || '',
-                        viaTitle: node.viaTitle || '',
-                        hop: node.hop || 0,
-                        passive: false,
-                        ready: true,
-                        lastSyncText: '',
-                        children: [],
-                    };
-                });
-                const lineChildren = {};
-                this.lineNodes.forEach(node => {
-                    const row = lineRows[node.panelId];
-                    const parent = directRows[node.viaPanelId] || lineRows[node.viaPanelId];
-                    if (parent && parent !== row) {
-                        if (!lineChildren[node.viaPanelId]) {
-                            lineChildren[node.viaPanelId] = [];
-                        }
-                        lineChildren[node.viaPanelId].push(row);
-                    }
-                });
-                const used = {};
-                const attach = row => {
-                    if (!row || used[row.key]) {
-                        return null;
-                    }
-                    used[row.key] = true;
-                    row.children = (lineChildren[row.panelId] || []).map(attach).filter(Boolean);
-                    if (!row.children.length) {
-                        delete row.children;
-                    }
-                    return row;
-                };
-                const direct = this.nodes.map(node => attach(directRows[node.peerId])).filter(Boolean);
-                const rest = this.lineNodes.map(node => attach(lineRows[node.panelId])).filter(Boolean);
-                selfRow.children = direct.concat(rest);
-                if (!selfRow.children.length) {
-                    delete selfRow.children;
-                }
-                return [selfRow];
-            },
         },
         methods: {
             async getNodes() {
@@ -490,15 +377,9 @@
                     const msg = await HttpUtil.get('/xui/node_sync/nodes');
                     if (msg.success && msg.obj) {
                         this.version = msg.obj.version || '';
-                        this.panelId = msg.obj.panelId || '';
-                        this.panelTitle = msg.obj.title || '';
-                        this.selfAddress = msg.obj.selfAddress ||
-                            (location.protocol + '//' + location.host + '{{ .base_path }}');
                         this.timezone = msg.obj.timezone || '';
                         this.zoneName = msg.obj.zoneName || '';
                         this.nodes = msg.obj.nodes || [];
-                        this.lineNodes = msg.obj.lineNodes || [];
-                        this.tableKey++;
                         this.autoEnabled = (msg.obj.autoInterval || 0) > 0;
                         this.autoInterval = this.autoEnabled ? msg.obj.autoInterval : 5;
                         this.refreshChecks();
@@ -663,20 +544,6 @@
                 if (msg.success) {
                     await this.getNodes();
                 }
-            },
-            nodePosition(record) {
-                return this.nodes.findIndex(node => node.id === record.id);
-            },
-            canMoveUp(record) {
-                return this.nodePosition(record) > 0;
-            },
-            canMoveDown(record) {
-                const pos = this.nodePosition(record);
-                return pos >= 0 && pos < this.nodes.length - 1;
-            },
-            indirectVia(record) {
-                const hop = this.hopText + ' ' + record.hop + (this.hopUnitText ? ' ' + this.hopUnitText : '');
-                return this.viaText + ' ' + (record.viaTitle || this.unknownNodeText) + ' · ' + hop;
             },
             openAdd() {
                 this.modal.isEdit = false;
