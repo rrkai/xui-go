@@ -437,7 +437,7 @@ INFO - sqlite: cache_size= -16000  source= auto  memory_limit_mb= 3921
 
 - 仅支持 HTTP-01，公网必须能访问 80 端口；NAT 机型需先做端口映射，否则会提示不可申请。
 - 到期前 12 小时开始续期，失败每 30 分钟重试；证书过期后域名会自动切换供应商，连续失败 3 次则放弃并回退 HTTP。
-- IP 证书仅 Let's Encrypt 支持；域名可使用 Let's Encrypt 或 ZeroSSL。选择 ZeroSSL 时无需申请 EAB：填写邮箱（留空按 `ssl@公网IP去点.email` 自动生成），首次签发时自动向 ZeroSSL 获取并保存 EAB。
+- IP 证书仅 Let's Encrypt 支持；域名可使用 Let's Encrypt 或 ZeroSSL。选择 ZeroSSL 时无需申请 EAB：首次签发时自动按 `ssl@公网IP去点.email` 生成邮箱并获取 EAB，成功后保存。
 - 证书安装、更换或续期后立即热加载（外部替换文件最迟 10 秒内生效），不重启面板和 Xray；证书有效时 HTTP 访问自动跳转 HTTPS，证书过期或缺失时保留 HTTP 入口。
 - 自动管理的证书保存在 `/root/xui-https/`。
 

@@ -89,7 +89,6 @@ type CertStatus struct {
 	Enabled           bool      `json:"enabled"`
 	Target            string    `json:"target"`
 	Provider          string    `json:"provider"`
-	Email             string    `json:"email"`
 	CertFile          string    `json:"certFile"`
 	KeyFile           string    `json:"keyFile"`
 	Present           bool      `json:"present"`
@@ -977,13 +976,12 @@ func (s *AutoCertService) Issue(target, provider, eabKid, eabHmac, email string)
 			if loadErr == nil && strings.TrimSpace(stored.Kid) != "" && strings.TrimSpace(stored.Hmac) != "" {
 				eabKid, eabHmac = stored.Kid, stored.Hmac
 			} else {
-				if email == "" {
-					email, err = s.defaultEmail()
-					if err != nil {
-						err = fmt.Errorf("无法自动生成 ZeroSSL 邮箱（%v），请填写邮箱", err)
-						updateLastError(err.Error())
-						return err
-					}
+				if generated, genErr := s.defaultEmail(); genErr == nil {
+					email = generated
+				} else if email == "" {
+					err = fmt.Errorf("无法自动生成 ZeroSSL 邮箱（%v），请稍后重试", genErr)
+					updateLastError(err.Error())
+					return err
 				}
 				fetched, fetchErr := fetchZeroSSLEAB(email)
 				if fetchErr != nil {
@@ -1338,7 +1336,6 @@ func (s *AutoCertService) Status() (CertStatus, error) {
 		Enabled:           state.Enabled,
 		Target:            state.Target,
 		Provider:          state.Provider,
-		Email:             state.Email,
 		CertFile:          certFile,
 		KeyFile:           keyFile,
 		Issuing:           autoCertRunning.Load(),
