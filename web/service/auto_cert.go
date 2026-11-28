@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +38,9 @@ const (
 
 	letsEncryptDirectory = "https://acme-v02.api.letsencrypt.org/directory"
 	zeroSSLDirectory     = "https://acme.zerossl.com/v2/DV90"
-	port80CheckURL       = "https://ifconfig.co/port/80"
+	// ZeroSSL issues EAB credentials for an email without a dashboard login.
+	zeroSSLEABEmailURL = "https://api.zerossl.com/acme/eab-credentials-email"
+	port80CheckURL     = "https://ifconfig.co/port/80"
 
 	// Renew only inside this window so frequent checks never hit the CA early.
 	certRenewWindow = 12 * time.Hour
@@ -86,6 +89,7 @@ type CertStatus struct {
 	Enabled           bool      `json:"enabled"`
 	Target            string    `json:"target"`
 	Provider          string    `json:"provider"`
+	Email             string    `json:"email"`
 	CertFile          string    `json:"certFile"`
 	KeyFile           string    `json:"keyFile"`
 	Present           bool      `json:"present"`
@@ -272,6 +276,59 @@ func saveEAB(eab eabCredentials) error {
 		return err
 	}
 	return writeFileAtomic(eabPath(), b, 0600)
+}
+
+func certEmailForIP(ip string) (string, error) {
+	parsed := net.ParseIP(strings.TrimSpace(ip))
+	if parsed == nil || parsed.To4() == nil {
+		return "", fmt.Errorf("不是有效的 IPv4 地址")
+	}
+	return "ssl@" + strings.ReplaceAll(parsed.To4().String(), ".", "") + ".email", nil
+}
+
+func (s *AutoCertService) defaultEmail() (string, error) {
+	ip, err := s.PublicIP()
+	if err != nil {
+		return "", err
+	}
+	return certEmailForIP(ip)
+}
+
+func fetchZeroSSLEAB(email string) (eabCredentials, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return eabCredentials{}, fmt.Errorf("邮箱不能为空")
+	}
+	form := url.Values{"email": {email}}
+	req, err := http.NewRequest(http.MethodPost, zeroSSLEABEmailURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return eabCredentials{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return eabCredentials{}, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return eabCredentials{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return eabCredentials{}, fmt.Errorf("HTTP %d：%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var result struct {
+		Kid  string `json:"eab_kid"`
+		Hmac string `json:"eab_hmac_key"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return eabCredentials{}, fmt.Errorf("响应无法解析：%v", err)
+	}
+	if strings.TrimSpace(result.Kid) == "" || strings.TrimSpace(result.Hmac) == "" {
+		return eabCredentials{}, fmt.Errorf("响应缺少 EAB 凭据")
+	}
+	return eabCredentials{Kid: result.Kid, Hmac: result.Hmac}, nil
 }
 
 func (s *AutoCertService) PublicIP() (string, error) {
@@ -913,15 +970,32 @@ func (s *AutoCertService) Issue(target, provider, eabKid, eabHmac, email string)
 		updateLastError(err.Error())
 		return err
 	}
+	email = strings.TrimSpace(email)
 	if provider == CertProviderZeroSSL {
 		if strings.TrimSpace(eabKid) == "" || strings.TrimSpace(eabHmac) == "" {
 			stored, loadErr := loadEAB()
-			if loadErr != nil {
-				err := fmt.Errorf("ZeroSSL 需要 EAB 凭据（EAB Key ID 与 HMAC Key）")
-				updateLastError(err.Error())
-				return err
+			if loadErr == nil && strings.TrimSpace(stored.Kid) != "" && strings.TrimSpace(stored.Hmac) != "" {
+				eabKid, eabHmac = stored.Kid, stored.Hmac
+			} else {
+				if email == "" {
+					email, err = s.defaultEmail()
+					if err != nil {
+						err = fmt.Errorf("无法自动生成 ZeroSSL 邮箱（%v），请填写邮箱", err)
+						updateLastError(err.Error())
+						return err
+					}
+				}
+				fetched, fetchErr := fetchZeroSSLEAB(email)
+				if fetchErr != nil {
+					err = fmt.Errorf("ZeroSSL 自动获取 EAB 失败（%s）：%v", email, fetchErr)
+					updateLastError(err.Error())
+					return err
+				}
+				eabKid, eabHmac = fetched.Kid, fetched.Hmac
+				if saveErr := saveEAB(fetched); saveErr != nil {
+					logger.Warning("failed to persist ZeroSSL EAB credentials:", saveErr)
+				}
 			}
-			eabKid, eabHmac = stored.Kid, stored.Hmac
 		}
 	}
 
@@ -969,7 +1043,7 @@ func (s *AutoCertService) Issue(target, provider, eabKid, eabHmac, email string)
 		updateLastError(err.Error())
 		return err
 	}
-	user := &acmeUser{email: strings.TrimSpace(email), key: accountKey}
+	user := &acmeUser{email: email, key: accountKey}
 
 	cfg := lego.NewConfig(user)
 	cfg.Certificate.KeyType = certcrypto.EC256
@@ -1064,7 +1138,7 @@ func (s *AutoCertService) Issue(target, provider, eabKid, eabHmac, email string)
 		Enabled:           true,
 		Target:            target,
 		Provider:          provider,
-		Email:             strings.TrimSpace(email),
+		Email:             email,
 		LastIssueAt:       time.Now(),
 		ReleasePort80:     existing.ReleasePort80,
 		ReleasePort80Unit: existing.ReleasePort80Unit,
@@ -1089,11 +1163,8 @@ func alternateProvider(provider string) (string, bool) {
 }
 
 func providerAvailable(provider string) bool {
-	if provider == CertProviderZeroSSL {
-		_, err := loadEAB()
-		return err == nil
-	}
-	return true
+	// ZeroSSL can fetch EAB on demand from the stored or generated email.
+	return provider == CertProviderLetsEncrypt || provider == CertProviderZeroSSL
 }
 
 func (s *AutoCertService) RenewIfNeeded() {
@@ -1267,6 +1338,7 @@ func (s *AutoCertService) Status() (CertStatus, error) {
 		Enabled:           state.Enabled,
 		Target:            state.Target,
 		Provider:          state.Provider,
+		Email:             state.Email,
 		CertFile:          certFile,
 		KeyFile:           keyFile,
 		Issuing:           autoCertRunning.Load(),
